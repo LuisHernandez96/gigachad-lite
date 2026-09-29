@@ -464,3 +464,145 @@ class TestAbsoluteHome:
 
         assert final.state == "succeeded"
         assert final.final_message == "rel ok"
+
+
+def reap(pid):
+    try:
+        os.waitpid(pid, 0)
+    except ChildProcessError:
+        pass
+
+
+def kill_group_quietly(pid):
+    try:
+        os.killpg(pid, 9)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def wait_or_fail(store, job_id, timeout):
+    try:
+        return store.wait(job_id, timeout=timeout)
+    except TimeoutError as exc:
+        pytest.fail(f"wait() did not reach a terminal state: {exc}")
+
+
+@pytest.mark.red_phase
+class TestJobLifecycleRaces:
+    def test_early_cancel_is_not_overwritten_by_supervisor_startup(
+        self, fake_agents, workdir, monkeypatch, tmp_path
+    ):
+        from gigachad_lite.jobs import JobStore
+
+        args_file = tmp_path / "args.json"
+        fake_agents(sleep=0, args_file=args_file)
+        monkeypatch.setenv("GIGACHAD_LITE_TEST_SUPERVISOR_DELAY", "2")
+        store = JobStore()
+        job = store.create("codex", "gpt-5", "p", workdir)
+        started = store.start(job)
+
+        store.cancel(job.id)
+
+        final = wait_or_fail(store, job.id, 15)
+        assert final.state == "cancelled"
+        wait_for(lambda: reap_nowait(started.supervisor_pid), timeout=10)
+        assert not args_file.exists(), "worker must never be launched after an early cancel"
+        assert store.get(job.id).worker_pid is None, "worker must never be launched after an early cancel"
+        assert store.get(job.id).state == "cancelled"
+        assert json.loads((job.job_dir / "meta.json").read_text())["state"] == "cancelled"
+
+    def test_reconciliation_does_not_overwrite_a_just_finished_job(self, fake_agents, workdir, monkeypatch):
+        from gigachad_lite import jobs
+        from gigachad_lite.jobs import JobStore
+
+        store = JobStore()
+        job = store.create("codex", "gpt-5", "p", workdir)
+        dead = subprocess.Popen([sys.executable, "-c", "pass"])
+        dead.wait()
+        job.state = "running"
+        job.supervisor_pid = dead.pid
+        job.save()
+
+        def finish_in_between(pid):
+            finished = jobs.Job.load(job.job_dir)
+            finished.state = "succeeded"
+            finished.final_message = "all done"
+            finished.finished_at = time.time()
+            finished.save()
+            return False
+
+        monkeypatch.setattr(jobs, "pid_alive", finish_in_between)
+
+        got = store.get(job.id)
+
+        assert got.state == "succeeded"
+        assert got.final_message == "all done"
+        on_disk = json.loads((job.job_dir / "meta.json").read_text())
+        assert on_disk["state"] == "succeeded"
+        assert on_disk["final_message"] == "all done"
+        assert on_disk["error"] is None
+
+    def test_supervisor_death_kills_the_orphaned_worker(self, fake_agents, workdir):
+        from gigachad_lite.jobs import JobStore
+
+        fake_agents(sleep=30)
+        store = JobStore()
+        job = store.create("codex", "gpt-5", "p", workdir)
+        started = store.start(job)
+        worker_pid = wait_for(lambda: store.get(job.id).worker_pid)
+        try:
+            os.kill(started.supervisor_pid, 9)
+            reap(started.supervisor_pid)
+
+            got = store.get(job.id)
+
+            assert got.state == "failed"
+            assert "supervisor died" in got.error
+            assert wait_for_dead(worker_pid, 5), "reconciliation must kill the orphaned worker group"
+        finally:
+            kill_group_quietly(worker_pid)
+
+    def test_wait_returns_when_unreaped_supervisor_is_killed(self, fake_agents, workdir):
+        from gigachad_lite.jobs import JobStore
+
+        fake_agents(sleep=30)
+        store = JobStore()
+        job = store.create("codex", "gpt-5", "p", workdir)
+        started = store.start(job)
+        worker_pid = wait_for(lambda: store.get(job.id).worker_pid)
+        try:
+            os.kill(started.supervisor_pid, 9)
+
+            final = wait_or_fail(store, job.id, 10)
+
+            assert final.is_terminal
+        finally:
+            kill_group_quietly(worker_pid)
+            reap(started.supervisor_pid)
+
+    def test_pid_alive_reports_zombie_as_dead(self):
+        from gigachad_lite.jobs import pid_alive
+
+        child = subprocess.Popen([sys.executable, "-c", "pass"])
+        try:
+            os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOWAIT)
+            assert not pid_alive(child.pid)
+        finally:
+            child.wait()
+
+
+def reap_nowait(pid):
+    """True once ``pid`` has exited (reaping it if it is our child)."""
+    try:
+        done, _ = os.waitpid(pid, os.WNOHANG)
+    except ChildProcessError:
+        return not pid_alive(pid)
+    return done == pid
+
+
+def wait_for_dead(pid, timeout):
+    try:
+        wait_for(lambda: not pid_alive(pid), timeout=timeout)
+    except AssertionError:
+        return False
+    return True
