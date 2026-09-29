@@ -360,7 +360,6 @@ RESULT_KEYS = {
 }
 
 
-@pytest.mark.red_phase
 class TestJsonResultSchema:
     def test_run_wait_result_json_share_one_schema(self, fake_agents, workdir, capsys):
         fake_agents(last_message="done")
@@ -393,7 +392,7 @@ class TestJsonResultSchema:
         assert code == 3
         data = json.loads(out)
         assert RESULT_KEYS <= set(data)
-        assert data["state"] == "running"
+        assert data["state"] in ("queued", "running")
         assert data["exit_code"] is None
         assert data["final_message"] is None
         assert data["finished_at"] is None

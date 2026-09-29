@@ -23,21 +23,35 @@ def job_to_dict(job: Job) -> dict:
     return data
 
 
-def header(job: Job) -> str:
-    duration = (job.finished_at or 0) - job.started_at if job.started_at and job.finished_at else 0.0
-    if job.killed_by:
-        outcome = f"killed by {job.killed_by} via {job.signal}"
+def result_payload(job: Job) -> dict:
+    """The one result schema shared by ``run``, ``wait`` and ``result``."""
+    payload = job_to_dict(job)
+    try:
+        result = json.loads((job.job_dir / "result.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        result = {}
+    finished = job.started_at is not None and job.finished_at is not None
+    payload["duration_s"] = result.get("duration_s", job.finished_at - job.started_at if finished else None)
+    payload["extras"] = result.get("extras", {})
+    payload["stderr_path"] = result.get("stderr_path", str(job.job_dir / "stderr.log"))
+    return payload
+
+
+def header(payload: dict) -> str:
+    duration = payload["duration_s"] or 0.0
+    if payload["killed_by"]:
+        outcome = f"killed by {payload['killed_by']} via {payload['signal']}"
     else:
-        outcome = f"exit {'-' if job.exit_code is None else job.exit_code}"
-    return f"{job.id} {job.state} ({job.agent}/{job.model}, {duration:.1f}s, {outcome})"
+        outcome = f"exit {'-' if payload['exit_code'] is None else payload['exit_code']}"
+    return f"{payload['id']} {payload['state']} ({payload['agent']}/{payload['model']}, {duration:.1f}s, {outcome})"
 
 
-def format_result(job: Job) -> str:
-    lines = [header(job)]
-    if job.final_message:
-        lines += ["", job.final_message]
-    elif job.error:
-        lines += ["", f"error: {job.error}"]
+def format_result(payload: dict) -> str:
+    lines = [header(payload)]
+    if payload["final_message"]:
+        lines += ["", payload["final_message"]]
+    elif payload["error"]:
+        lines += ["", f"error: {payload['error']}"]
     return "\n".join(lines)
 
 
@@ -46,7 +60,8 @@ def format_row(job: Job) -> str:
 
 
 def emit(job: Job, as_json: bool) -> None:
-    print(json.dumps(job_to_dict(job), indent=2) if as_json else format_result(job))
+    payload = result_payload(job)
+    print(json.dumps(payload, indent=2) if as_json else format_result(payload))
 
 
 def check_depth() -> str | None:
@@ -134,6 +149,8 @@ def cmd_wait(store: JobStore, args: argparse.Namespace, extra_args: list[str]) -
 def cmd_result(store: JobStore, args: argparse.Namespace, extra_args: list[str]) -> int:
     job = store.get(args.job_id)
     if not job.is_terminal:
+        if args.json:
+            print(json.dumps(result_payload(job), indent=2))
         print(f"job {job.id} is still {job.state}", file=sys.stderr)
         return EXIT_NOT_FINISHED
     emit(job, args.json)

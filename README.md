@@ -55,6 +55,10 @@ gcl result <id>
 
 Arguments after `--` are passed through to the worker CLI.
 
+### JSON output
+
+`run --json`, `wait --json` and `result --json` print the same object: the job metadata (`id`, `state`, `agent`, `model`, `cwd`, `mode`, `depth`, `created_at`, `started_at`, `finished_at`, `job_dir`, ...) plus the outcome fields `exit_code`, `final_message`, `error`, `killed_by`, `signal`, `duration_s`, `stderr_path` and `extras` (agent-specific data, e.g. Claude's `session_id` and `total_cost_usd`). While a job is still running, `result --json` prints the same schema with the terminal fields set to `null` and exits 3.
+
 Exit codes of `run`, `wait` and `result` mirror the job state:
 
 | Code | Meaning |

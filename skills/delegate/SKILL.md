@@ -33,7 +33,7 @@ Add `--mode read-only` for reviews and second opinions, and `--timeout <seconds>
 
 ## 5. Monitor
 
-Run `gcl wait <id> --json` in your host's background or long-running command facility, or poll `gcl status <id>` periodically. Keep the user updated (state, elapsed time). Use `gcl logs <id> --tail 50` to peek and `gcl cancel <id>` to stop.
+Run `gcl wait <id> --json` in your host's background or long-running command facility, or poll `gcl status <id>` periodically. `wait --json` returns the full result, including `extras` such as the Claude session id and cost. Keep the user updated (state, elapsed time). Use `gcl logs <id> --tail 50` to peek and `gcl cancel <id>` to stop.
 
 ## 6. Finish
 

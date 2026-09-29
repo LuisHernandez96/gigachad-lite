@@ -3,8 +3,6 @@
 import json
 from pathlib import Path
 
-import pytest
-
 CLAUDE_ENTRIES = [
     {"agent": "claude", "id": "sonnet", "default": False},
     {"agent": "claude", "id": "opus", "default": False},
@@ -206,7 +204,6 @@ class TestModelsCommand:
         assert "sonnet" not in out
 
 
-@pytest.mark.red_phase
 class TestCodexDefaultDetection:
     def _default(self, tmp_path, config):
         from gigachad_lite.models import list_models
