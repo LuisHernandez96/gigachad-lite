@@ -39,7 +39,6 @@ def test_version_still_works(capsys):
     assert "0.1.0" in capsys.readouterr().out
 
 
-@pytest.mark.red_phase
 class TestCli:
     def test_start_prints_job_id(self, fake_agents, workdir, capsys):
         job_id = start_job(capsys)
