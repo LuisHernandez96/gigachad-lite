@@ -1,7 +1,7 @@
 ---
 sprint: 5
 name: v0.1.4 — skill works under restricted permissions
-status: pending
+status: complete
 ---
 
 # Sprint 5: v0.1.4
@@ -16,4 +16,4 @@ three prompt-delivery options so orchestrators pick the right one without trial 
 
 | # | ID | Section | Depends On | Status | Description |
 |---|-----|---------|-----------|--------|-------------|
-| 1 | T-K-1 | GREEN | — | pending | Skill: prompt delivery options + version 0.1.4 |
+| 1 | T-K-1 | GREEN | — | complete | Skill: prompt delivery options + version 0.1.4 |
