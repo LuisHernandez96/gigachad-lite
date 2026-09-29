@@ -60,3 +60,11 @@ def test_skill_frontmatter_and_body():
     assert re.search(r"^description: \S", frontmatter, re.MULTILINE)
     for phrase in ("gcl start", "gcl wait", "git diff", "--mode read-only"):
         assert phrase in body
+
+
+def test_readme_documents_install_and_every_subcommand():
+    text = (ROOT / "README.md").read_text()
+    assert "/plugin marketplace add LuisHernandez96/gigachad-lite" in text
+    assert "codex plugin marketplace add LuisHernandez96/gigachad-lite" in text
+    for command in ("start", "run", "status", "wait", "result", "logs", "cancel", "list", "models"):
+        assert f"`{command}`" in text
