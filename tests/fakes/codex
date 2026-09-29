@@ -2,6 +2,7 @@
 """Fake codex executable for tests, driven by FAKE_* env vars."""
 import json
 import os
+import signal
 import sys
 import time
 
@@ -16,6 +17,15 @@ print("codex working")
 if "-o" in argv and os.environ.get("FAKE_NO_LAST_MESSAGE") != "1":
     with open(argv[argv.index("-o") + 1], "w") as f:
         f.write(os.environ.get("FAKE_LAST_MESSAGE", "done"))
+
+if os.environ.get("FAKE_TRAP_TERM") == "1":
+    def _on_term(signum, frame):
+        print("caught SIGTERM", flush=True)
+        os._exit(0)
+
+    signal.signal(signal.SIGTERM, _on_term)
+elif os.environ.get("FAKE_IGNORE_TERM") == "1":
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
 
 time.sleep(float(os.environ.get("FAKE_SLEEP", "0")))
 

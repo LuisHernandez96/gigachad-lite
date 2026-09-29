@@ -281,3 +281,48 @@ class TestCli:
         monkeypatch.setenv("GIGACHAD_LITE_MAX_DEPTH", "2")
         code, _, _ = run_cli(capsys, "run", "--agent", "codex", "--model", "m", "--prompt", "hi")
         assert code == 0
+
+
+@pytest.mark.red_phase
+class TestCliKillAttribution:
+    def test_timed_out_first_line_names_killer_and_signal(self, fake_agents, workdir, capsys, monkeypatch):
+        fake_agents(sleep=30, trap_term=1)
+        monkeypatch.setenv("GIGACHAD_LITE_KILL_GRACE", "1")
+        job_id = start_job(capsys, "--timeout", "1")
+        run_cli(capsys, "wait", job_id)
+
+        _, out, _ = run_cli(capsys, "result", job_id)
+        assert re.fullmatch(
+            r"\S+ timed_out \(codex/\S+, [\d.]+s, killed by timeout via SIGTERM\)",
+            out.splitlines()[0],
+        )
+
+    def test_success_line_still_ends_with_exit_0(self, fake_agents, workdir, capsys):
+        job_id = start_job(capsys)
+        run_cli(capsys, "wait", job_id)
+
+        _, out, _ = run_cli(capsys, "result", job_id)
+        first = out.splitlines()[0]
+        assert first.endswith("exit 0)")
+        assert "killed by" not in first
+
+    def test_failed_line_still_shows_exit_code(self, fake_agents, workdir, capsys):
+        fake_agents(rc=3)
+        job_id = start_job(capsys)
+        run_cli(capsys, "wait", job_id)
+
+        _, out, _ = run_cli(capsys, "result", job_id)
+        assert out.splitlines()[0].endswith("exit 3)")
+
+
+@pytest.mark.red_phase
+class TestCliInvalidDepth:
+    def test_start_with_invalid_depth_warns_and_proceeds(self, fake_agents, workdir, capsys, monkeypatch):
+        monkeypatch.setenv("GIGACHAD_LITE_DEPTH", "abc")
+        code, out, err = run_cli(
+            capsys, "start", "--agent", "codex", "--model", "m", "--prompt", "hi"
+        )
+
+        assert code == 0
+        assert re.fullmatch(r"\d{8}-\d{6}-[0-9a-f]{4}", out.strip())
+        assert "GIGACHAD_LITE_DEPTH" in err
