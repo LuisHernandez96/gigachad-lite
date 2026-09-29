@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+"""Fake claude executable for tests, driven by FAKE_* env vars."""
+import json
+import os
+import sys
+import time
+
+prompt = sys.stdin.read()
+argv = sys.argv[1:]
+
+time.sleep(float(os.environ.get("FAKE_SLEEP", "0")))
+
+args_file = os.environ.get("FAKE_ARGS_FILE")
+if args_file:
+    keys = ("GIGACHAD_AGENT_CHILD", "GIGACHAD_LITE_DEPTH", "CLAUDECODE")
+    with open(args_file, "w") as f:
+        json.dump({"argv": argv, "env": {k: os.environ.get(k) for k in keys}, "stdin": prompt}, f)
+
+if os.environ.get("FAKE_BAD_JSON") == "1":
+    print("this is not json")
+else:
+    print(json.dumps({
+        "type": "result",
+        "result": os.environ.get("FAKE_LAST_MESSAGE", "done"),
+        "is_error": os.environ.get("FAKE_IS_ERROR") == "1",
+        "session_id": "sess-1",
+        "total_cost_usd": 0.01,
+    }))
+sys.stdout.flush()
+sys.exit(int(os.environ.get("FAKE_RC", "0")))
