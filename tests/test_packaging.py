@@ -58,6 +58,11 @@ def test_skill_frontmatter_and_body():
     frontmatter, body = match.groups()
     assert re.search(r"^name: delegate$", frontmatter, re.MULTILINE)
     assert re.search(r"^description: \S", frontmatter, re.MULTILINE)
+    description = re.search(r"^description: (.*)$", frontmatter, re.MULTILINE).group(1)
+    assert len(description) <= 600
+    for phrase in ("astra", "sonnet", "gcl models", "subagent"):
+        assert phrase in description
+    assert "Never tell the user a model is unavailable" in body
     for phrase in ("gcl start", "gcl wait", "git diff", "--mode read-only", "--prompt-file", '--prompt "', "--prompt-file -"):
         assert phrase in body
 

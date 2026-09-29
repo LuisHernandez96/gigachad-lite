@@ -1,6 +1,6 @@
 ---
 name: delegate
-description: Delegate a coding task to another AI agent (Claude via claude CLI, or OpenAI/Codex models via codex CLI) as a tracked background job with gigachad-lite. Use when the user asks to delegate, hand off, or get a second model to implement or review something.
+description: Delegate a task to another AI agent/model as a tracked background job via gigachad-lite (`gcl`). Models: Codex/OpenAI gpt-6-astra, gpt-6-sol, gpt-6-luna, gpt-6.1-sol, gpt-5.x (aliases astra, sol, luna); Claude sonnet, opus, haiku, fable. Use when asked to delegate, hand off, or get a second opinion, or when a model is named: "an astra agent", "a sonnet subagent", "opus worker" are model names. Live list: `gcl models`.
 ---
 
 # Delegate work with gigachad-lite
@@ -16,6 +16,8 @@ Find the CLI, in this order:
 3. Install it: `python3 -m pip install --user git+https://github.com/LuisHernandez96/gigachad-lite`
 
 ## 2. Pick a worker
+
+Model names are not agent types. If the user names a model (e.g. astra, sol, luna, sonnet), run `gcl models` and match it (aliases: astra→gpt-6-astra, sol→gpt-6-sol, luna→gpt-6-luna). Never tell the user a model is unavailable without checking `gcl models` first.
 
 Run `gcl models --json`. If the user hasn't named a worker, ask them, offering a Claude model and a codex model; delegating across vendors is the point. The agent is `claude` for Claude models and `codex` for codex models.
 

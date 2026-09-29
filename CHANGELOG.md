@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.5
+
+- The delegate skill description names model families and aliases so requests like "an astra agent" trigger it; the skill must check `gcl models` before saying a model is unavailable.
+
 ## 0.1.4
 
 - The delegate skill documents `--prompt` / `--prompt-file -` for hosts that cannot write files (found by plugin smoke test).
