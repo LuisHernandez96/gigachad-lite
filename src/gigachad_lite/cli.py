@@ -261,5 +261,5 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return args.func(store, args, extra_args)
     except KeyError as exc:
-        print(f"no such job: {exc.args[0]}", file=sys.stderr)
+        print(f"unknown job: {exc.args[0]}", file=sys.stderr)
         return EXIT_USAGE

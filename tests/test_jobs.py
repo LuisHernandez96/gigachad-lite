@@ -618,7 +618,6 @@ def read_pid(path):
     return int(wait_for(lambda: path.exists() and path.read_text().strip(), timeout=10))
 
 
-@pytest.mark.red_phase
 class TestGroupWideEscalation:
     def test_timeout_kills_a_term_ignoring_child_in_the_worker_group(
         self, fake_agents, workdir, monkeypatch, tmp_path
@@ -665,7 +664,6 @@ class TestGroupWideEscalation:
             kill_quietly(child_pid)
 
 
-@pytest.mark.red_phase
 class TestPersistedSupervisorPid:
     def test_start_persists_supervisor_pid_to_meta(self, fake_agents, workdir, monkeypatch):
         from gigachad_lite.jobs import JobStore
@@ -701,7 +699,6 @@ class TestPersistedSupervisorPid:
             reap(job.supervisor_pid)
 
 
-@pytest.mark.red_phase
 class TestResultJsonRecovery:
     def test_get_finalizes_from_result_json_when_supervisor_died_before_meta_update(self, fake_agents, workdir):
         from gigachad_lite.jobs import JobStore, write_json
@@ -744,7 +741,6 @@ class TestResultJsonRecovery:
         assert on_disk["finished_at"] is not None
 
 
-@pytest.mark.red_phase
 class TestWorkerCleanupOnSupervisorException:
     def test_exception_after_spawn_kills_the_worker_and_fails_the_job(
         self, fake_agents, workdir, monkeypatch, tmp_path
@@ -771,7 +767,6 @@ class TestWorkerCleanupOnSupervisorException:
             reap_nowait(job.supervisor_pid)
 
 
-@pytest.mark.red_phase
 class TestIncompleteJobDirs:
     def test_list_skips_directories_without_meta_json(self, fake_agents, workdir):
         from gigachad_lite.jobs import JobStore

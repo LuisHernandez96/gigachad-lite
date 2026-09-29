@@ -326,7 +326,6 @@ class TestCliInvalidDepth:
         assert "GIGACHAD_LITE_DEPTH" in err
 
 
-@pytest.mark.red_phase
 class TestIncompleteJobDirsCli:
     def _setup(self, fake_agents, workdir, capsys):
         from gigachad_lite.jobs import JobStore

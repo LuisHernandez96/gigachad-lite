@@ -81,22 +81,38 @@ def pid_alive(pid: int | None) -> bool:
     return not _is_zombie(pid)
 
 
-def kill_orphaned_worker(pid: int, grace: float) -> str:
-    """SIGTERM the worker's process group, SIGKILL it after ``grace`` seconds; return the last signal sent."""
+def _group_alive(pgid: int) -> bool:
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def kill_process_group(pgid: int, grace: float, reap: subprocess.Popen | None = None) -> str:
+    """SIGTERM a process group, SIGKILL it if any member outlives ``grace`` seconds; return the last signal sent.
+
+    Pass ``reap`` when the group leader is our own child so its zombie does not keep the group alive.
+    """
     used = "SIGTERM"
     try:
-        os.killpg(pid, signal.SIGTERM)
+        os.killpg(pgid, signal.SIGTERM)
     except (ProcessLookupError, PermissionError):
         return used
     deadline = time.monotonic() + grace
-    while pid_alive(pid) and time.monotonic() < deadline:
+    while time.monotonic() < deadline:
+        if reap is not None:
+            reap.poll()
+        if not _group_alive(pgid):
+            return used
         time.sleep(0.05)
-    if pid_alive(pid):
-        used = "SIGKILL"
-        try:
-            os.killpg(pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
+    used = "SIGKILL"
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
     return used
 
 
@@ -194,7 +210,10 @@ class JobStore:
             start_new_session=True,
         )
         self._supervisors[job.id] = proc
-        job.supervisor_pid = proc.pid
+        with job_lock(job.job_dir):
+            job = Job.load(job.job_dir)
+            job.supervisor_pid = proc.pid
+            job.save()
         return job
 
     def get(self, job_id: str) -> Job:
@@ -203,8 +222,11 @@ class JobStore:
         if not job.is_terminal and job.supervisor_pid and not self._supervisor_alive(job):
             with job_lock(job_dir):
                 job = Job.load(job_dir)
-                if not job.is_terminal and not (job_dir / "result.json").exists():
-                    self._finalize_dead_supervisor(job)
+                if not job.is_terminal:
+                    if (job_dir / "result.json").exists():
+                        self._adopt_result(job)
+                    else:
+                        self._finalize_dead_supervisor(job)
         return job
 
     def _supervisor_alive(self, job: Job) -> bool:
@@ -213,11 +235,18 @@ class JobStore:
             return False
         return pid_alive(job.supervisor_pid)
 
+    def _adopt_result(self, job: Job) -> None:
+        result = json.loads((job.job_dir / "result.json").read_text(encoding="utf-8"))
+        for name in ("state", "exit_code", "killed_by", "signal", "final_message", "error"):
+            setattr(job, name, result[name])
+        job.finished_at = time.time()
+        job.save()
+
     def _finalize_dead_supervisor(self, job: Job) -> None:
         if job.worker_pid and pid_alive(job.worker_pid):
             grace = float(os.environ.get("GIGACHAD_LITE_KILL_GRACE", DEFAULT_KILL_GRACE))
             job.killed_by = "supervisor_died"
-            job.signal = kill_orphaned_worker(job.worker_pid, grace)
+            job.signal = kill_process_group(job.worker_pid, grace)
         job.state = "failed"
         job.error = "supervisor died"
         job.finished_at = time.time()
@@ -226,7 +255,14 @@ class JobStore:
     def list(self, cwd: Path | None = None) -> list[Job]:
         if not self.jobs_dir.is_dir():
             return []
-        jobs = [self.get(p.name) for p in sorted(self.jobs_dir.iterdir(), reverse=True) if p.is_dir()]
+        jobs = []
+        for p in sorted(self.jobs_dir.iterdir(), reverse=True):
+            if not p.is_dir():
+                continue
+            try:
+                jobs.append(self.get(p.name))
+            except (KeyError, FileNotFoundError, json.JSONDecodeError):
+                continue
         if cwd is not None:
             wanted = os.path.realpath(cwd)
             jobs = [j for j in jobs if os.path.realpath(j.cwd) == wanted]
@@ -265,7 +301,7 @@ class JobStore:
             return self.jobs_dir / job_id
         matches = []
         if self.jobs_dir.is_dir():
-            matches = [p for p in self.jobs_dir.iterdir() if p.name.startswith(job_id)]
+            matches = [p for p in self.jobs_dir.iterdir() if p.name.startswith(job_id) and (p / "meta.json").is_file()]
         if len(matches) != 1:
             raise KeyError(job_id)
         return matches[0]

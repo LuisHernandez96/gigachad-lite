@@ -7,7 +7,6 @@ then records the outcome in ``result.json`` and ``meta.json``.
 from __future__ import annotations
 
 import os
-import signal
 import subprocess
 import sys
 import time
@@ -15,31 +14,16 @@ import traceback
 from pathlib import Path
 
 from gigachad_lite.adapters import get_adapter
-from gigachad_lite.jobs import CANCEL_MARKER, DEFAULT_KILL_GRACE, Job, job_lock, write_json
+from gigachad_lite.jobs import (
+    CANCEL_MARKER,
+    DEFAULT_KILL_GRACE,
+    Job,
+    job_lock,
+    kill_process_group,
+    write_json,
+)
 
 POLL_INTERVAL = 0.2
-
-
-def kill_group(proc: subprocess.Popen, grace: float) -> str:
-    """SIGTERM the worker's process group, then SIGKILL it once ``grace`` seconds have passed.
-
-    Returns the name of the signal that ended the worker.
-    """
-    ended_by = "SIGTERM"
-    try:
-        os.killpg(proc.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
-    try:
-        proc.wait(timeout=grace)
-    except subprocess.TimeoutExpired:
-        ended_by = "SIGKILL"
-    try:
-        os.killpg(proc.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    proc.wait()
-    return ended_by
 
 
 def run_worker(job: Job) -> None:
@@ -59,21 +43,30 @@ def run_worker(job: Job) -> None:
             stderr=err,
             start_new_session=True,
         )
-        job.worker_pid = proc.pid
-        job.save()
+        try:
+            job.worker_pid = proc.pid
+            job.save()
+            if os.environ.get("GIGACHAD_LITE_TEST_FAIL_AFTER_SPAWN"):
+                time.sleep(0.5)  # test-only: let the worker record its pid before it is torn down
+                raise RuntimeError("injected failure after worker spawn")
 
-        deadline = time.monotonic() + job.timeout
-        outcome = None
-        while proc.poll() is None:
-            if (job.job_dir / CANCEL_MARKER).exists():
-                outcome = "cancelled"
-            elif time.monotonic() >= deadline:
-                outcome = "timed_out"
-            if outcome:
-                job.killed_by = "cancel" if outcome == "cancelled" else "timeout"
-                job.signal = kill_group(proc, grace)
-                break
-            time.sleep(POLL_INTERVAL)
+            deadline = time.monotonic() + job.timeout
+            outcome = None
+            while proc.poll() is None:
+                if (job.job_dir / CANCEL_MARKER).exists():
+                    outcome = "cancelled"
+                elif time.monotonic() >= deadline:
+                    outcome = "timed_out"
+                if outcome:
+                    job.killed_by = "cancel" if outcome == "cancelled" else "timeout"
+                    job.signal = kill_process_group(proc.pid, grace, proc)
+                    proc.wait()
+                    break
+                time.sleep(POLL_INTERVAL)
+        except BaseException:
+            kill_process_group(proc.pid, grace, proc)
+            proc.wait()
+            raise
 
     job.exit_code = proc.returncode
     job.finished_at = time.time()
@@ -129,6 +122,7 @@ def claim_job(job_dir: Path) -> Job | None:
 
 
 def main(argv: list[str]) -> int:
+    # GIGACHAD_LITE_TEST_SUPERVISOR_DELAY and GIGACHAD_LITE_TEST_FAIL_AFTER_SPAWN are test-only hooks.
     time.sleep(float(os.environ.get("GIGACHAD_LITE_TEST_SUPERVISOR_DELAY", "0")))
     job = claim_job(Path(argv[0]))
     if job is None:
