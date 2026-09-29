@@ -1,7 +1,7 @@
 ---
 sprint: 1
 name: gigachad-lite v0.1 — execute-only delegation CLI
-status: pending
+status: complete
 ---
 
 # Sprint 1: gigachad-lite v0.1
@@ -51,14 +51,14 @@ tests/fakes/codex, tests/fakes/claude   # fake agent executables used by tests
 
 | # | ID | Section | Depends On | Status | Description |
 |---|-----|---------|-----------|--------|-------------|
-| 1 | T-S-1 | GREEN | — | pending | Project scaffold |
-| 2 | UT-B-1 | RED | T-S-1 | pending | Fake agents + adapter tests |
-| 3 | T-B-1 | GREEN | UT-B-1 | pending | Codex and Claude adapters |
-| 4 | UT-A-1 | RED | T-B-1 | pending | Job store + supervisor tests |
-| 5 | T-A-1 | GREEN | UT-A-1 | pending | Job store + supervisor |
-| 6 | UT-C-1 | RED | T-A-1 | pending | CLI tests |
-| 7 | T-C-1 | GREEN | UT-C-1 | pending | CLI |
-| 8 | T-D-1 | GREEN | T-C-1 | pending | models command |
-| 9 | T-E-1 | GREEN | T-D-1 | pending | Plugins, bin wrapper, shared skill |
-| 10 | T-E-2 | GREEN | T-E-1 | pending | README |
-| 11 | IT-1 | INTEGRATION | T-E-2 | pending | End-to-end with fake agents |
+| 1 | T-S-1 | GREEN | — | complete | Project scaffold |
+| 2 | UT-B-1 | RED | T-S-1 | complete | Fake agents + adapter tests |
+| 3 | T-B-1 | GREEN | UT-B-1 | complete | Codex and Claude adapters |
+| 4 | UT-A-1 | RED | T-B-1 | complete | Job store + supervisor tests |
+| 5 | T-A-1 | GREEN | UT-A-1 | complete | Job store + supervisor |
+| 6 | UT-C-1 | RED | T-A-1 | complete | CLI tests |
+| 7 | T-C-1 | GREEN | UT-C-1 | complete | CLI |
+| 8 | T-D-1 | GREEN | T-C-1 | complete | models command |
+| 9 | T-E-1 | GREEN | T-D-1 | complete | Plugins, bin wrapper, shared skill |
+| 10 | T-E-2 | GREEN | T-E-1 | complete | README |
+| 11 | IT-1 | INTEGRATION | T-E-2 | complete | End-to-end with fake agents |
