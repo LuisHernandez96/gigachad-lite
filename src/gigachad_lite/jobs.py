@@ -18,6 +18,8 @@ from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
+from gigachad_lite.env import current_depth
+
 TERMINAL_STATES = ("succeeded", "failed", "timed_out", "cancelled")
 DEFAULT_TIMEOUT = 3600
 CANCEL_MARKER = "cancel"
@@ -68,7 +70,10 @@ class Job:
     finished_at: float | None = None
     supervisor_pid: int | None = None
     worker_pid: int | None = None
+    depth: int = 0
     exit_code: int | None = None
+    killed_by: str | None = None
+    signal: str | None = None
     error: str | None = None
     final_message: str | None = None
 
@@ -119,6 +124,7 @@ class JobStore:
             mode=mode,
             timeout=timeout,
             extra_args=list(extra_args),
+            depth=current_depth(),
             created_at=time.time(),
         )
         (job.job_dir / "prompt.md").write_text(prompt, encoding="utf-8")

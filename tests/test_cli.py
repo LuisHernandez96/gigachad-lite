@@ -283,7 +283,6 @@ class TestCli:
         assert code == 0
 
 
-@pytest.mark.red_phase
 class TestCliKillAttribution:
     def test_timed_out_first_line_names_killer_and_signal(self, fake_agents, workdir, capsys, monkeypatch):
         fake_agents(sleep=30, trap_term=1)
@@ -315,7 +314,6 @@ class TestCliKillAttribution:
         assert out.splitlines()[0].endswith("exit 3)")
 
 
-@pytest.mark.red_phase
 class TestCliInvalidDepth:
     def test_start_with_invalid_depth_warns_and_proceeds(self, fake_agents, workdir, capsys, monkeypatch):
         monkeypatch.setenv("GIGACHAD_LITE_DEPTH", "abc")

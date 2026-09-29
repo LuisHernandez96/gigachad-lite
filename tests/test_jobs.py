@@ -260,7 +260,6 @@ class TestJobs:
             store.wait(job.id, timeout=0.5)
 
 
-@pytest.mark.red_phase
 class TestJobDepth:
     def test_depth_defaults_to_zero(self, fake_agents, workdir, monkeypatch):
         from gigachad_lite.jobs import JobStore
@@ -291,7 +290,6 @@ class TestJobDepth:
         assert json.loads((job.job_dir / "meta.json").read_text())["depth"] == 0
 
 
-@pytest.mark.red_phase
 class TestKillAttribution:
     def test_timeout_with_trapped_term(self, fake_agents, workdir, monkeypatch):
         from gigachad_lite.jobs import JobStore

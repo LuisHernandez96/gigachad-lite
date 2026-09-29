@@ -2,20 +2,19 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from dataclasses import asdict
 from pathlib import Path
 
 from gigachad_lite import __version__
 from gigachad_lite.adapters import AGENTS
+from gigachad_lite.env import current_depth, max_depth, reset_warnings
 from gigachad_lite.jobs import DEFAULT_TIMEOUT, Job, JobStore
 from gigachad_lite.models import list_models
 
 EXIT_USAGE = 2
 EXIT_NOT_FINISHED = 3
 STATE_EXIT_CODES = {"succeeded": 0, "failed": 1, "timed_out": 124, "cancelled": 130}
-DEFAULT_MAX_DEPTH = 1
 
 
 def job_to_dict(job: Job) -> dict:
@@ -26,8 +25,11 @@ def job_to_dict(job: Job) -> dict:
 
 def header(job: Job) -> str:
     duration = (job.finished_at or 0) - job.started_at if job.started_at and job.finished_at else 0.0
-    code = "-" if job.exit_code is None else job.exit_code
-    return f"{job.id} {job.state} ({job.agent}/{job.model}, {duration:.1f}s, exit {code})"
+    if job.killed_by:
+        outcome = f"killed by {job.killed_by} via {job.signal}"
+    else:
+        outcome = f"exit {'-' if job.exit_code is None else job.exit_code}"
+    return f"{job.id} {job.state} ({job.agent}/{job.model}, {duration:.1f}s, {outcome})"
 
 
 def format_result(job: Job) -> str:
@@ -48,10 +50,9 @@ def emit(job: Job, as_json: bool) -> None:
 
 
 def check_depth() -> str | None:
-    depth = int(os.environ.get("GIGACHAD_LITE_DEPTH", "0"))
-    max_depth = int(os.environ.get("GIGACHAD_LITE_MAX_DEPTH", DEFAULT_MAX_DEPTH))
-    if depth >= max_depth:
-        return f"delegation depth {depth} reached GIGACHAD_LITE_MAX_DEPTH={max_depth}; refusing to start a job"
+    depth, limit = current_depth(), max_depth()
+    if depth >= limit:
+        return f"delegation depth {depth} reached GIGACHAD_LITE_MAX_DEPTH={limit}; refusing to start a job"
     return None
 
 
@@ -247,6 +248,7 @@ def main(argv: list[str] | None = None) -> int:
     if "--" in argv:
         split = argv.index("--")
         argv, extra_args = argv[:split], argv[split + 1 :]
+    reset_warnings()
     args = build_parser().parse_args(argv)
     store = JobStore()
     try:

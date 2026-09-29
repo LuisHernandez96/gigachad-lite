@@ -69,7 +69,7 @@ Exit codes of `run`, `wait` and `result` mirror the job state:
 ## How it works
 
 - Jobs live in `<GIGACHAD_LITE_HOME>/jobs/<id>/` (default `~/.local/state/gigachad-lite`).
-- `start` spawns a detached supervisor (`python -m gigachad_lite.supervise <job_dir>`) that runs the worker in its own process group, so timeout and cancel kill the whole tree, and records the worker's real exit code.
+- `start` spawns a detached supervisor (`python -m gigachad_lite.supervise <job_dir>`) that runs the worker in its own process group, so timeout and cancel kill the whole tree, and records the worker's real exit code (never altered). A job killed on timeout or cancel also records `killed_by` (`timeout` or `cancel`) and `signal` (`SIGTERM`, or `SIGKILL` if the worker outlived the grace period); both are `null` otherwise, and the result line reads `killed by <killed_by> via <signal>` instead of `exit <code>`.
 - The final message comes from a dedicated source, never from scanning the output stream: for Codex the file written by `codex exec -o <file>`; for Claude the `result` field of its JSON output.
 - Worker environment: `CLAUDECODE` is removed (nested `claude` refuses to start otherwise), `GIGACHAD_AGENT_CHILD=1` is set (disables orchestrator hooks of installed plugins), and `GIGACHAD_LITE_DEPTH` is incremented.
 

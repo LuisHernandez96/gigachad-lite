@@ -21,8 +21,12 @@ POLL_INTERVAL = 0.2
 DEFAULT_KILL_GRACE = 10.0
 
 
-def kill_group(proc: subprocess.Popen, grace: float) -> None:
-    """SIGTERM the worker's process group, then SIGKILL it once ``grace`` seconds have passed."""
+def kill_group(proc: subprocess.Popen, grace: float) -> str:
+    """SIGTERM the worker's process group, then SIGKILL it once ``grace`` seconds have passed.
+
+    Returns the name of the signal that ended the worker.
+    """
+    ended_by = "SIGTERM"
     try:
         os.killpg(proc.pid, signal.SIGTERM)
     except ProcessLookupError:
@@ -30,12 +34,13 @@ def kill_group(proc: subprocess.Popen, grace: float) -> None:
     try:
         proc.wait(timeout=grace)
     except subprocess.TimeoutExpired:
-        pass
+        ended_by = "SIGKILL"
     try:
         os.killpg(proc.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
     proc.wait()
+    return ended_by
 
 
 def run_worker(job: Job) -> None:
@@ -75,7 +80,8 @@ def run_worker(job: Job) -> None:
             elif time.monotonic() >= deadline:
                 outcome = "timed_out"
             if outcome:
-                kill_group(proc, grace)
+                job.killed_by = "cancel" if outcome == "cancelled" else "timeout"
+                job.signal = kill_group(proc, grace)
                 break
             time.sleep(POLL_INTERVAL)
 
@@ -101,6 +107,8 @@ def run_worker(job: Job) -> None:
             "id": job.id,
             "state": job.state,
             "exit_code": job.exit_code,
+            "killed_by": job.killed_by,
+            "signal": job.signal,
             "final_message": job.final_message,
             "error": job.error,
             "agent": job.agent,
