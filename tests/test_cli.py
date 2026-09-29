@@ -324,3 +324,31 @@ class TestCliInvalidDepth:
         assert code == 0
         assert re.fullmatch(r"\d{8}-\d{6}-[0-9a-f]{4}", out.strip())
         assert "GIGACHAD_LITE_DEPTH" in err
+
+
+@pytest.mark.red_phase
+class TestIncompleteJobDirsCli:
+    def _setup(self, fake_agents, workdir, capsys):
+        from gigachad_lite.jobs import JobStore
+
+        job_id = start_job(capsys)
+        empty = JobStore().jobs_dir / "20200101-000000-dead"
+        empty.mkdir()
+        return job_id, empty.name
+
+    def test_status_and_list_all_tolerate_an_empty_job_dir(self, fake_agents, workdir, capsys):
+        self._setup(fake_agents, workdir, capsys)
+
+        code, _, _ = run_cli(capsys, "status")
+        assert code == 0
+        code, out, _ = run_cli(capsys, "list", "--all")
+        assert code == 0
+        assert "20200101-000000-dead" not in out
+
+    def test_result_of_an_empty_job_dir_is_an_unknown_job(self, fake_agents, workdir, capsys):
+        _, empty_name = self._setup(fake_agents, workdir, capsys)
+
+        code, _, err = run_cli(capsys, "result", empty_name)
+
+        assert code == 2
+        assert "unknown job" in err.lower()

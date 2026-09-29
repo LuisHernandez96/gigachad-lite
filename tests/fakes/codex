@@ -28,6 +28,28 @@ if os.environ.get("FAKE_TRAP_TERM") == "1":
 elif os.environ.get("FAKE_IGNORE_TERM") == "1":
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
 
+
+def _record_pid(env_name, pid):
+    path = os.environ.get(env_name)
+    if path:
+        with open(path + ".tmp", "w") as f:
+            f.write(str(pid))
+        os.replace(path + ".tmp", path)
+
+
+if os.environ.get("FAKE_CHILD_IGNORES_TERM") == "1":
+    import subprocess
+
+    child = subprocess.Popen(
+        [sys.executable, "-c", "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    _record_pid("FAKE_CHILD_PID_FILE", child.pid)
+
+_record_pid("FAKE_PID_FILE", os.getpid())
+
 time.sleep(float(os.environ.get("FAKE_SLEEP", "0")))
 
 args_file = os.environ.get("FAKE_ARGS_FILE")

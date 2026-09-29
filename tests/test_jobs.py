@@ -605,3 +605,179 @@ def wait_for_dead(pid, timeout):
     except AssertionError:
         return False
     return True
+
+
+def kill_quietly(pid):
+    try:
+        os.kill(pid, 9)
+    except ProcessLookupError:
+        pass
+
+
+def read_pid(path):
+    return int(wait_for(lambda: path.exists() and path.read_text().strip(), timeout=10))
+
+
+@pytest.mark.red_phase
+class TestGroupWideEscalation:
+    def test_timeout_kills_a_term_ignoring_child_in_the_worker_group(
+        self, fake_agents, workdir, monkeypatch, tmp_path
+    ):
+        from gigachad_lite.jobs import JobStore
+
+        child_file = tmp_path / "child.pid"
+        fake_agents(sleep=30, child_ignores_term=1, child_pid_file=child_file)
+        monkeypatch.setenv("GIGACHAD_LITE_KILL_GRACE", "1")
+        store = JobStore()
+        job = store.start(store.create("codex", "gpt-5", "p", workdir, timeout=1))
+        child_pid = read_pid(child_file)
+        try:
+            final = wait_or_fail(store, job.id, 15)
+
+            assert final.state == "timed_out"
+            assert wait_for_dead(child_pid, 5), "SIGKILL must reach the whole worker process group"
+        finally:
+            kill_quietly(child_pid)
+            reap_nowait(job.supervisor_pid)
+
+    def test_supervisor_death_kills_a_term_ignoring_child_after_the_leader_exits(
+        self, fake_agents, workdir, monkeypatch, tmp_path
+    ):
+        from gigachad_lite.jobs import JobStore
+
+        child_file = tmp_path / "child.pid"
+        fake_agents(sleep=30, child_ignores_term=1, child_pid_file=child_file)
+        monkeypatch.setenv("GIGACHAD_LITE_KILL_GRACE", "1")
+        store = JobStore()
+        job = store.start(store.create("codex", "gpt-5", "p", workdir))
+        child_pid = read_pid(child_file)
+        wait_for(lambda: store.get(job.id).worker_pid)
+        try:
+            os.kill(job.supervisor_pid, 9)
+            reap(job.supervisor_pid)
+
+            got = store.get(job.id)
+
+            assert got.state == "failed"
+            assert "supervisor died" in got.error
+            assert wait_for_dead(child_pid, 5), "orphan cleanup must SIGKILL the group even after the leader exits"
+        finally:
+            kill_quietly(child_pid)
+
+
+@pytest.mark.red_phase
+class TestPersistedSupervisorPid:
+    def test_start_persists_supervisor_pid_to_meta(self, fake_agents, workdir, monkeypatch):
+        from gigachad_lite.jobs import JobStore
+
+        fake_agents(sleep=0)
+        monkeypatch.setenv("GIGACHAD_LITE_TEST_SUPERVISOR_DELAY", "5")
+        store = JobStore()
+        job = store.start(store.create("codex", "gpt-5", "p", workdir))
+        try:
+            on_disk = json.loads((job.job_dir / "meta.json").read_text())
+
+            assert on_disk["supervisor_pid"] is not None
+            assert on_disk["supervisor_pid"] == job.supervisor_pid
+        finally:
+            kill_group_quietly(job.supervisor_pid)
+            reap(job.supervisor_pid)
+
+    def test_wait_returns_failed_when_supervisor_dies_before_claiming(self, fake_agents, workdir, monkeypatch):
+        from gigachad_lite.jobs import JobStore
+
+        fake_agents(sleep=0)
+        monkeypatch.setenv("GIGACHAD_LITE_TEST_SUPERVISOR_DELAY", "5")
+        store = JobStore()
+        job = store.start(store.create("codex", "gpt-5", "p", workdir))
+        try:
+            os.kill(job.supervisor_pid, 9)
+
+            final = wait_or_fail(store, job.id, 10)
+
+            assert final.state == "failed"
+            assert "supervisor died" in final.error
+        finally:
+            reap(job.supervisor_pid)
+
+
+@pytest.mark.red_phase
+class TestResultJsonRecovery:
+    def test_get_finalizes_from_result_json_when_supervisor_died_before_meta_update(self, fake_agents, workdir):
+        from gigachad_lite.jobs import JobStore, write_json
+
+        store = JobStore()
+        job = store.create("codex", "gpt-5", "p", workdir)
+        dead = subprocess.Popen([sys.executable, "-c", "pass"])
+        dead.wait()
+        job.state = "running"
+        job.started_at = time.time() - 2
+        job.supervisor_pid = dead.pid
+        job.save()
+        write_json(
+            job.job_dir / "result.json",
+            {
+                "id": job.id,
+                "state": "succeeded",
+                "exit_code": 0,
+                "killed_by": None,
+                "signal": None,
+                "final_message": "message X",
+                "error": None,
+                "agent": "codex",
+                "model": "gpt-5",
+                "duration_s": 1.5,
+                "stderr_path": str(job.job_dir / "stderr.log"),
+                "extras": {},
+            },
+        )
+
+        got = store.get(job.id)
+
+        assert got.state == "succeeded"
+        assert got.final_message == "message X"
+        on_disk = json.loads((job.job_dir / "meta.json").read_text())
+        assert on_disk["state"] == "succeeded"
+        assert on_disk["final_message"] == "message X"
+        assert on_disk["exit_code"] == 0
+        assert on_disk["error"] is None
+        assert on_disk["finished_at"] is not None
+
+
+@pytest.mark.red_phase
+class TestWorkerCleanupOnSupervisorException:
+    def test_exception_after_spawn_kills_the_worker_and_fails_the_job(
+        self, fake_agents, workdir, monkeypatch, tmp_path
+    ):
+        from gigachad_lite.jobs import JobStore
+
+        pid_file = tmp_path / "worker.pid"
+        fake_agents(sleep=30, pid_file=pid_file)
+        monkeypatch.setenv("GIGACHAD_LITE_KILL_GRACE", "1")
+        monkeypatch.setenv("GIGACHAD_LITE_TEST_FAIL_AFTER_SPAWN", "1")
+        store = JobStore()
+        job = store.start(store.create("codex", "gpt-5", "p", workdir))
+        worker_pid = read_pid(pid_file)
+        try:
+            final = wait_or_fail(store, job.id, 10)
+
+            assert final.state == "failed"
+            assert final.error
+            assert "exit code" not in final.error
+            assert "supervisor died" not in final.error
+            assert wait_for_dead(worker_pid, 5), "the worker must not outlive a supervisor exception"
+        finally:
+            kill_group_quietly(worker_pid)
+            reap_nowait(job.supervisor_pid)
+
+
+@pytest.mark.red_phase
+class TestIncompleteJobDirs:
+    def test_list_skips_directories_without_meta_json(self, fake_agents, workdir):
+        from gigachad_lite.jobs import JobStore
+
+        store = JobStore()
+        job = store.create("codex", "gpt-5", "p", workdir)
+        (store.jobs_dir / "20200101-000000-dead").mkdir()
+
+        assert [j.id for j in store.list()] == [job.id]
