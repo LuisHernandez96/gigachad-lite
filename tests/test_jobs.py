@@ -487,7 +487,6 @@ def wait_or_fail(store, job_id, timeout):
         pytest.fail(f"wait() did not reach a terminal state: {exc}")
 
 
-@pytest.mark.red_phase
 class TestJobLifecycleRaces:
     def test_early_cancel_is_not_overwritten_by_supervisor_startup(
         self, fake_agents, workdir, monkeypatch, tmp_path

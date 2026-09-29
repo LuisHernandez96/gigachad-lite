@@ -15,10 +15,9 @@ import traceback
 from pathlib import Path
 
 from gigachad_lite.adapters import get_adapter
-from gigachad_lite.jobs import CANCEL_MARKER, Job, write_json
+from gigachad_lite.jobs import CANCEL_MARKER, DEFAULT_KILL_GRACE, Job, job_lock, write_json
 
 POLL_INTERVAL = 0.2
-DEFAULT_KILL_GRACE = 10.0
 
 
 def kill_group(proc: subprocess.Popen, grace: float) -> str:
@@ -49,10 +48,6 @@ def run_worker(job: Job) -> None:
     grace = float(os.environ.get("GIGACHAD_LITE_KILL_GRACE", DEFAULT_KILL_GRACE))
     transcript = job.job_dir / "transcript.log"
     stderr_log = job.job_dir / "stderr.log"
-
-    job.state = "running"
-    job.started_at = time.time()
-    job.save()
 
     with open(job.job_dir / "prompt.md", "rb") as stdin, open(transcript, "wb") as out, open(stderr_log, "wb") as err:
         proc = subprocess.Popen(
@@ -116,10 +111,28 @@ def run_worker(job: Job) -> None:
     job.save()
 
 
+def claim_job(job_dir: Path) -> Job | None:
+    """Mark the job running, or return None if it is already terminal or cancelled."""
+    with job_lock(job_dir):
+        job = Job.load(job_dir)
+        if job.is_terminal:
+            return None
+        job.supervisor_pid = os.getpid()
+        if (job_dir / CANCEL_MARKER).exists():
+            job.state = "cancelled"
+            job.finished_at = time.time()
+        else:
+            job.state = "running"
+            job.started_at = time.time()
+        job.save()
+        return None if job.is_terminal else job
+
+
 def main(argv: list[str]) -> int:
-    job = Job.load(Path(argv[0]))
-    job.supervisor_pid = os.getpid()
-    job.save()
+    time.sleep(float(os.environ.get("GIGACHAD_LITE_TEST_SUPERVISOR_DELAY", "0")))
+    job = claim_job(Path(argv[0]))
+    if job is None:
+        return 0
     try:
         run_worker(job)
     except Exception:  # noqa: BLE001 - any failure must still be recorded on the job

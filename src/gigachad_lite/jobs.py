@@ -7,6 +7,7 @@ when cancellation is requested.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import secrets
@@ -15,6 +16,8 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
@@ -24,6 +27,7 @@ from gigachad_lite.env import current_depth
 TERMINAL_STATES = ("succeeded", "failed", "timed_out", "cancelled")
 DEFAULT_TIMEOUT = 3600
 CANCEL_MARKER = "cancel"
+DEFAULT_KILL_GRACE = 10.0
 
 
 def default_home() -> Path:
@@ -43,6 +47,28 @@ def write_json(path: Path, data: Any) -> None:
         raise
 
 
+@contextmanager
+def job_lock(job_dir: Path) -> Iterator[None]:
+    """Exclusive lock serializing every read-modify-write of a job's ``meta.json``."""
+    with open(job_dir / ".lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def _is_zombie(pid: int) -> bool:
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+    except OSError:
+        try:
+            state = subprocess.run(
+                ["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True, check=False
+            ).stdout.strip()
+        except OSError:
+            return False
+        return state.startswith("Z")
+    return stat[stat.rindex(")") + 2 :].startswith("Z")
+
+
 def pid_alive(pid: int | None) -> bool:
     if not pid:
         return False
@@ -52,7 +78,26 @@ def pid_alive(pid: int | None) -> bool:
         return False
     except PermissionError:
         return True
-    return True
+    return not _is_zombie(pid)
+
+
+def kill_orphaned_worker(pid: int, grace: float) -> str:
+    """SIGTERM the worker's process group, SIGKILL it after ``grace`` seconds; return the last signal sent."""
+    used = "SIGTERM"
+    try:
+        os.killpg(pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        return used
+    deadline = time.monotonic() + grace
+    while pid_alive(pid) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    if pid_alive(pid):
+        used = "SIGKILL"
+        try:
+            os.killpg(pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+    return used
 
 
 @dataclass
@@ -98,6 +143,7 @@ class JobStore:
     def __init__(self, home: Path | None = None) -> None:
         self.home = Path(home if home else default_home()).expanduser().resolve()
         self.jobs_dir = self.home / "jobs"
+        self._supervisors: dict[str, subprocess.Popen] = {}
 
     def create(
         self,
@@ -147,18 +193,35 @@ class JobStore:
             stderr=subprocess.DEVNULL,
             start_new_session=True,
         )
+        self._supervisors[job.id] = proc
         job.supervisor_pid = proc.pid
         return job
 
     def get(self, job_id: str) -> Job:
         job_dir = self._resolve(job_id)
         job = Job.load(job_dir)
-        if not job.is_terminal and job.supervisor_pid and not pid_alive(job.supervisor_pid):
-            job.state = "failed"
-            job.error = "supervisor died"
-            job.finished_at = time.time()
-            job.save()
+        if not job.is_terminal and job.supervisor_pid and not self._supervisor_alive(job):
+            with job_lock(job_dir):
+                job = Job.load(job_dir)
+                if not job.is_terminal and not (job_dir / "result.json").exists():
+                    self._finalize_dead_supervisor(job)
         return job
+
+    def _supervisor_alive(self, job: Job) -> bool:
+        proc = self._supervisors.get(job.id)
+        if proc is not None and proc.poll() is not None:
+            return False
+        return pid_alive(job.supervisor_pid)
+
+    def _finalize_dead_supervisor(self, job: Job) -> None:
+        if job.worker_pid and pid_alive(job.worker_pid):
+            grace = float(os.environ.get("GIGACHAD_LITE_KILL_GRACE", DEFAULT_KILL_GRACE))
+            job.killed_by = "supervisor_died"
+            job.signal = kill_orphaned_worker(job.worker_pid, grace)
+        job.state = "failed"
+        job.error = "supervisor died"
+        job.finished_at = time.time()
+        job.save()
 
     def list(self, cwd: Path | None = None) -> list[Job]:
         if not self.jobs_dir.is_dir():
@@ -180,20 +243,22 @@ class JobStore:
             time.sleep(0.1)
 
     def cancel(self, job_id: str) -> Job:
-        job = Job.load(self._resolve(job_id))
-        if job.is_terminal:
+        job_dir = self._resolve(job_id)
+        with job_lock(job_dir):
+            job = Job.load(job_dir)
+            if job.is_terminal:
+                return job
+            (job_dir / CANCEL_MARKER).touch()
+            if not self._supervisor_alive(job):
+                if job.worker_pid:
+                    try:
+                        os.killpg(job.worker_pid, signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError):
+                        pass
+                job.state = "cancelled"
+                job.finished_at = time.time()
+                job.save()
             return job
-        (job.job_dir / CANCEL_MARKER).touch()
-        if not pid_alive(job.supervisor_pid):
-            if job.worker_pid:
-                try:
-                    os.killpg(job.worker_pid, signal.SIGKILL)
-                except (ProcessLookupError, PermissionError):
-                    pass
-            job.state = "cancelled"
-            job.finished_at = time.time()
-            job.save()
-        return job
 
     def _resolve(self, job_id: str) -> Path:
         if (self.jobs_dir / job_id / "meta.json").is_file():
