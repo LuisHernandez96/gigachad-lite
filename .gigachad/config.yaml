@@ -1,0 +1,15 @@
+# Gigachad configuration (used to build gigachad-lite)
+model: sonnet
+max_loops: 100
+sprint_dir: .gigachad/sprints/sprint-1
+
+agent:
+  type: claude
+
+ci:
+  test_command: pytest
+  build_command: null
+  lint_command: "ruff check src tests"
+
+limits:
+  max_consecutive_failures: 3
