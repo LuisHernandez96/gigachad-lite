@@ -1,7 +1,7 @@
 # Gigachad configuration (used to build gigachad-lite)
 model: sonnet
 max_loops: 100
-sprint_dir: .gigachad/sprints/sprint-2
+sprint_dir: .gigachad/sprints/sprint-3
 
 agent:
   type: claude
