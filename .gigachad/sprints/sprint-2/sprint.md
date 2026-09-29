@@ -23,3 +23,4 @@ Principles (unchanged from Sprint 1): stdlib only, Python ≥ 3.9, never coerce 
 | 1 | UT-F-1 | RED | — | pending | Tests: depth recording + kill attribution |
 | 2 | T-F-1 | GREEN | UT-F-1 | pending | Record depth; record killed_by/signal |
 | 3 | T-G-1 | GREEN | T-F-1 | pending | Local CI script, CODEOWNERS, CONTRIBUTING |
+| 4 | T-H-1 | GREEN | T-G-1 | pending | Bump version to 0.1.1 + CHANGELOG |
