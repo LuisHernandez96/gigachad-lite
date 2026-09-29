@@ -1,0 +1,5 @@
+{
+  "name": "gigachad-lite",
+  "owner": {"name": "Luis Hernandez"},
+  "plugins": [{"name": "gigachad-lite", "source": "./", "description": "Delegate work to Claude or Codex workers as tracked background jobs"}]
+}

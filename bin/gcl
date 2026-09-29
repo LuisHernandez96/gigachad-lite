@@ -1,0 +1,13 @@
+#!/bin/sh
+# Zero-install wrapper: runs gigachad_lite from the repo checkout / plugin directory.
+SOURCE="$0"
+while [ -h "$SOURCE" ]; do
+    DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+    SOURCE="$(readlink "$SOURCE")"
+    case "$SOURCE" in
+        /*) ;;
+        *) SOURCE="$DIR/$SOURCE" ;;
+    esac
+done
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." && pwd)"
+PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m gigachad_lite "$@"

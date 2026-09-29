@@ -1,0 +1,7 @@
+{
+  "name": "gigachad-lite",
+  "version": "0.1.0",
+  "description": "Delegate work to Claude or Codex workers as tracked background jobs",
+  "author": {"name": "Luis Hernandez"},
+  "skills": "./skills/"
+}
