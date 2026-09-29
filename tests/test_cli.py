@@ -31,12 +31,12 @@ def start_job(capsys, *extra, agent="codex", prompt="do it"):
 
 
 def test_version_still_works(capsys):
-    from gigachad_lite import cli
+    from gigachad_lite import __version__, cli
 
     with pytest.raises(SystemExit) as exc:
         cli.main(["--version"])
     assert exc.value.code == 0
-    assert "0.1.0" in capsys.readouterr().out
+    assert __version__ in capsys.readouterr().out
 
 
 class TestCli:
