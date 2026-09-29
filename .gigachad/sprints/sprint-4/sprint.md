@@ -1,7 +1,7 @@
 ---
 sprint: 4
 name: v0.1.3 — second astra review fixes
-status: pending
+status: complete
 ---
 
 # Sprint 4: v0.1.3 — second review fixes
@@ -26,8 +26,8 @@ Principles unchanged: stdlib only, Python ≥ 3.9, POSIX, never coerce worker ex
 
 | # | ID | Section | Depends On | Status | Description |
 |---|-----|---------|-----------|--------|-------------|
-| 1 | UT-X-1 | RED | — | pending | Tests: lifecycle robustness #0–#4 |
-| 2 | T-X-1 | GREEN | UT-X-1 | pending | Fix #0–#4 |
-| 3 | UT-Y-1 | RED | T-X-1 | pending | Tests: models default + unified JSON result |
-| 4 | T-Y-1 | GREEN | UT-Y-1 | pending | Fix #8 #9 + docs |
-| 5 | T-V-2 | GREEN | T-Y-1 | pending | Version 0.1.3 + CHANGELOG |
+| 1 | UT-X-1 | RED | — | complete | Tests: lifecycle robustness #0–#4 |
+| 2 | T-X-1 | GREEN | UT-X-1 | complete | Fix #0–#4 |
+| 3 | UT-Y-1 | RED | T-X-1 | complete | Tests: models default + unified JSON result |
+| 4 | T-Y-1 | GREEN | UT-Y-1 | complete | Fix #8 #9 + docs |
+| 5 | T-V-2 | GREEN | T-Y-1 | complete | Version 0.1.3 + CHANGELOG |
