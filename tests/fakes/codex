@@ -23,7 +23,7 @@ args_file = os.environ.get("FAKE_ARGS_FILE")
 if args_file:
     keys = ("GIGACHAD_AGENT_CHILD", "GIGACHAD_LITE_DEPTH", "CLAUDECODE")
     with open(args_file, "w") as f:
-        json.dump({"argv": argv, "env": {k: os.environ.get(k) for k in keys}, "stdin": prompt}, f)
+        json.dump({"cwd": os.getcwd(), "argv": argv, "env": {k: os.environ.get(k) for k in keys}, "stdin": prompt}, f)
 
 sys.stdout.flush()
 sys.exit(int(os.environ.get("FAKE_RC", "0")))
