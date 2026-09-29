@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 
 
-@pytest.mark.red_phase
 class TestGetAdapter:
     def test_known_agents(self):
         from gigachad_lite.adapters import get_adapter
@@ -23,7 +22,6 @@ class TestGetAdapter:
         assert "claude" in str(exc.value)
 
 
-@pytest.mark.red_phase
 class TestCodexBuild:
     def test_write_mode_argv(self, tmp_path):
         from gigachad_lite.adapters import get_adapter
@@ -61,7 +59,6 @@ class TestCodexBuild:
         assert cmd.argv[-1] == "-"
 
 
-@pytest.mark.red_phase
 class TestClaudeBuild:
     def test_write_mode_argv(self, tmp_path):
         from gigachad_lite.adapters import get_adapter
@@ -82,7 +79,6 @@ class TestClaudeBuild:
         ]
 
 
-@pytest.mark.red_phase
 class TestBuildEnv:
     @pytest.mark.parametrize("agent", ["codex", "claude"])
     def test_env_sanitised(self, tmp_path, agent):
@@ -104,7 +100,6 @@ class TestBuildEnv:
         assert cmd.env["GIGACHAD_LITE_DEPTH"] == "1"
 
 
-@pytest.mark.red_phase
 class TestCodexParse:
     def test_reads_last_message_file_not_stdout(self, tmp_path):
         from gigachad_lite.adapters import get_adapter
@@ -134,7 +129,6 @@ class TestCodexParse:
         assert adapter.parse(tmp_path, proc.stdout).final_message == "the real answer"
 
 
-@pytest.mark.red_phase
 class TestClaudeParse:
     def test_parses_json_result(self, tmp_path):
         from gigachad_lite.adapters import get_adapter
