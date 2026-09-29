@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from gigachad_lite.env import current_depth
+
 
 @dataclass
 class AgentCommand:
@@ -27,11 +29,7 @@ class ParsedResult:
 def child_env(env: Mapping[str, str]) -> dict[str, str]:
     child = {k: v for k, v in env.items() if k != "CLAUDECODE"}
     child["GIGACHAD_AGENT_CHILD"] = "1"
-    try:
-        depth = int(env.get("GIGACHAD_LITE_DEPTH", "0"))
-    except ValueError:
-        depth = 0
-    child["GIGACHAD_LITE_DEPTH"] = str(depth + 1)
+    child["GIGACHAD_LITE_DEPTH"] = str(current_depth(env) + 1)
     return child
 
 

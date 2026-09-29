@@ -3,7 +3,14 @@ from pathlib import Path
 
 import pytest
 
+from gigachad_lite import env
+
 FAKES_DIR = Path(__file__).parent / "fakes"
+
+
+@pytest.fixture(autouse=True)
+def _fresh_env_warnings():
+    env.reset_warnings()
 
 
 @pytest.fixture

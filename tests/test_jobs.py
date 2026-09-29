@@ -258,3 +258,99 @@ class TestJobs:
 
         with pytest.raises(TimeoutError):
             store.wait(job.id, timeout=0.5)
+
+
+class TestJobDepth:
+    def test_depth_defaults_to_zero(self, fake_agents, workdir, monkeypatch):
+        from gigachad_lite.jobs import JobStore
+
+        monkeypatch.delenv("GIGACHAD_LITE_DEPTH", raising=False)
+        job = JobStore().create("codex", "m", "p", workdir)
+
+        assert job.depth == 0
+        assert json.loads((job.job_dir / "meta.json").read_text())["depth"] == 0
+
+    def test_depth_read_from_env(self, fake_agents, workdir, monkeypatch):
+        from gigachad_lite.jobs import JobStore
+
+        monkeypatch.setenv("GIGACHAD_LITE_DEPTH", "1")
+        monkeypatch.setenv("GIGACHAD_LITE_MAX_DEPTH", "5")
+        job = JobStore().create("codex", "m", "p", workdir)
+
+        assert job.depth == 1
+        assert json.loads((job.job_dir / "meta.json").read_text())["depth"] == 1
+
+    def test_invalid_depth_env_is_zero_without_exception(self, fake_agents, workdir, monkeypatch):
+        from gigachad_lite.jobs import JobStore
+
+        monkeypatch.setenv("GIGACHAD_LITE_DEPTH", "abc")
+        job = JobStore().create("codex", "m", "p", workdir)
+
+        assert job.depth == 0
+        assert json.loads((job.job_dir / "meta.json").read_text())["depth"] == 0
+
+
+class TestKillAttribution:
+    def test_timeout_with_trapped_term(self, fake_agents, workdir, monkeypatch):
+        from gigachad_lite.jobs import JobStore
+
+        fake_agents(sleep=30, trap_term=1)
+        monkeypatch.setenv("GIGACHAD_LITE_KILL_GRACE", "1")
+        store = JobStore()
+        job = store.start(store.create("codex", "gpt-5", "p", workdir, timeout=1))
+        final = store.wait(job.id, timeout=15)
+
+        assert final.state == "timed_out"
+        assert final.killed_by == "timeout"
+        assert final.signal == "SIGTERM"
+        assert final.exit_code == 0
+        result = json.loads((final.job_dir / "result.json").read_text())
+        assert result["killed_by"] == "timeout"
+        assert result["signal"] == "SIGTERM"
+        assert result["exit_code"] == 0
+        assert wait_for(lambda: not pid_alive(final.worker_pid), timeout=5)
+
+    def test_timeout_escalates_to_sigkill(self, fake_agents, workdir, monkeypatch):
+        from gigachad_lite.jobs import JobStore
+
+        fake_agents(sleep=30, ignore_term=1)
+        monkeypatch.setenv("GIGACHAD_LITE_KILL_GRACE", "1")
+        store = JobStore()
+        job = store.start(store.create("codex", "gpt-5", "p", workdir, timeout=1))
+        final = store.wait(job.id, timeout=15)
+
+        assert final.state == "timed_out"
+        assert final.killed_by == "timeout"
+        assert final.signal == "SIGKILL"
+        assert wait_for(lambda: not pid_alive(final.worker_pid), timeout=5)
+
+    def test_cancel_with_trapped_term(self, fake_agents, workdir, monkeypatch):
+        from gigachad_lite.jobs import JobStore
+
+        fake_agents(sleep=30, trap_term=1)
+        monkeypatch.setenv("GIGACHAD_LITE_KILL_GRACE", "1")
+        store = JobStore()
+        job = store.start(store.create("codex", "gpt-5", "p", workdir))
+        running = wait_for(lambda: (j := store.get(job.id)).worker_pid and j)
+
+        store.cancel(job.id)
+        final = store.wait(job.id, timeout=15)
+
+        assert final.state == "cancelled"
+        assert final.killed_by == "cancel"
+        assert final.signal == "SIGTERM"
+        assert wait_for(lambda: not pid_alive(running.worker_pid), timeout=5)
+
+    def test_success_has_no_attribution(self, fake_agents, workdir):
+        from gigachad_lite.jobs import JobStore
+
+        store = JobStore()
+        job = store.start(store.create("codex", "gpt-5", "p", workdir))
+        final = store.wait(job.id, timeout=15)
+
+        assert final.state == "succeeded"
+        assert final.killed_by is None
+        assert final.signal is None
+        result = json.loads((final.job_dir / "result.json").read_text())
+        assert "killed_by" in result and result["killed_by"] is None
+        assert "signal" in result and result["signal"] is None

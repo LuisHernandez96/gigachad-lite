@@ -68,3 +68,17 @@ def test_readme_documents_install_and_every_subcommand():
     assert "codex plugin marketplace add LuisHernandez96/gigachad-lite" in text
     for command in ("start", "run", "status", "wait", "result", "logs", "cancel", "list", "models"):
         assert f"`{command}`" in text
+
+
+def test_ci_script_is_local_and_executable():
+    script = ROOT / "scripts/ci.sh"
+    assert os.access(script, os.X_OK)
+    text = script.read_text()
+    assert "ruff check src tests" in text
+    assert "pytest" in text
+    assert not (ROOT / ".github/workflows").exists()
+
+
+def test_contributor_policy_files():
+    assert "@LuisHernandez96" in (ROOT / ".github/CODEOWNERS").read_text()
+    assert "scripts/ci.sh" in (ROOT / "CONTRIBUTING.md").read_text()

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "gigachad-lite"
-version = "0.1.0"
+version = "0.1.1"
 description = "Execute-only delegation CLI: let Claude Code and Codex hand work to each other"
 requires-python = ">=3.9"
 license = "MIT"
