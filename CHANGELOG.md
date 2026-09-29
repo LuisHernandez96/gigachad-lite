@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- The delegate skill documents `--prompt` / `--prompt-file -` for hosts that cannot write files (found by plugin smoke test).
+
 ## 0.1.3
 
 Fixes found by a second gpt-6-astra review and hands-on orchestrator testing.
