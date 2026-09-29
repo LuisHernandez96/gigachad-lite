@@ -4,6 +4,7 @@ import re
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import pytest
 
@@ -354,3 +355,115 @@ class TestKillAttribution:
         result = json.loads((final.job_dir / "result.json").read_text())
         assert "killed_by" in result and result["killed_by"] is None
         assert "signal" in result and result["signal"] is None
+
+
+def _kill_job_processes(store, job_id):
+    job = store.get(job_id)
+    for pid in (job.supervisor_pid, job.worker_pid):
+        if pid:
+            try:
+                os.kill(pid, 9)
+            except ProcessLookupError:
+                pass
+
+
+@pytest.mark.red_phase
+class TestNonBlockingPromptDelivery:
+    BIG_PROMPT = "x" * (2 * 1024 * 1024)
+
+    def test_timeout_fires_when_worker_never_reads_stdin(self, fake_agents, workdir, monkeypatch):
+        from gigachad_lite.jobs import JobStore
+
+        fake_agents(sleep=30, no_read_stdin=1)
+        monkeypatch.setenv("GIGACHAD_LITE_KILL_GRACE", "1")
+        store = JobStore()
+        job = store.start(store.create("codex", "gpt-5", self.BIG_PROMPT, workdir, timeout=2))
+        try:
+            final = store.wait(job.id, timeout=10)
+            assert final.state == "timed_out"
+        finally:
+            _kill_job_processes(store, job.id)
+
+    def test_cancel_works_when_worker_never_reads_stdin(self, fake_agents, workdir, monkeypatch):
+        from gigachad_lite.jobs import JobStore
+
+        fake_agents(sleep=30, no_read_stdin=1)
+        monkeypatch.setenv("GIGACHAD_LITE_KILL_GRACE", "1")
+        store = JobStore()
+        job = store.start(store.create("codex", "gpt-5", self.BIG_PROMPT, workdir))
+        try:
+            wait_for(lambda: (j := store.get(job.id)).worker_pid and j)
+            store.cancel(job.id)
+            final = store.wait(job.id, timeout=10)
+            assert final.state == "cancelled"
+        finally:
+            _kill_job_processes(store, job.id)
+
+    def test_large_prompt_delivered_intact(self, fake_agents, workdir, tmp_path):
+        import hashlib
+
+        from gigachad_lite.jobs import JobStore
+
+        args_file = tmp_path / "args.json"
+        fake_agents(args_file=args_file)
+        prompt = "".join(chr(97 + i % 26) for i in range(2 * 1024 * 1024))
+        store = JobStore()
+        job = store.start(store.create("codex", "gpt-5", prompt, workdir))
+        final = store.wait(job.id, timeout=15)
+
+        assert final.state == "succeeded"
+        seen = json.loads(args_file.read_text())
+        assert seen["stdin_sha256"] == hashlib.sha256(prompt.encode()).hexdigest()
+
+
+@pytest.mark.red_phase
+class TestClaudeStderrSeparation:
+    def test_stderr_does_not_break_result_parsing(self, fake_agents, workdir):
+        from gigachad_lite.jobs import JobStore
+
+        fake_agents(stderr="some warning", last_message="the answer")
+        store = JobStore()
+        job = store.start(store.create("claude", "sonnet", "p", workdir))
+        final = store.wait(job.id, timeout=15)
+
+        assert final.state == "succeeded"
+        assert final.final_message == "the answer"
+
+    def test_logs_cli_shows_stdout_and_stderr(self, fake_agents, workdir, capsys):
+        from gigachad_lite import cli
+        from gigachad_lite.jobs import JobStore
+
+        fake_agents(stderr="some warning", last_message="the answer")
+        store = JobStore()
+        job = store.start(store.create("claude", "sonnet", "p", workdir))
+        store.wait(job.id, timeout=15)
+
+        assert cli.main(["logs", job.id]) == 0
+        out = capsys.readouterr().out
+        assert '"type": "result"' in out
+        assert "some warning" in out
+
+
+@pytest.mark.red_phase
+class TestAbsoluteHome:
+    def test_relative_home_is_made_absolute(self, tmp_path, monkeypatch):
+        from gigachad_lite.jobs import JobStore
+
+        monkeypatch.chdir(tmp_path)
+        store = JobStore(Path("relhome"))
+        assert store.home.is_absolute()
+
+    def test_relative_env_home_with_other_cwd(self, fake_agents, tmp_path, monkeypatch):
+        from gigachad_lite.jobs import JobStore
+
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("GIGACHAD_LITE_HOME", "relhome")
+        fake_agents(last_message="rel ok")
+        other = tmp_path / "other"
+        other.mkdir()
+        store = JobStore()
+        job = store.start(store.create("codex", "gpt-5", "p", other))
+        final = store.wait(job.id, timeout=15)
+
+        assert final.state == "succeeded"
+        assert final.final_message == "rel ok"

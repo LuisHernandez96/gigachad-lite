@@ -6,7 +6,7 @@ import signal
 import sys
 import time
 
-prompt = sys.stdin.read()
+prompt = "" if os.environ.get("FAKE_NO_READ_STDIN") == "1" else sys.stdin.read()
 argv = sys.argv[1:]
 
 if os.environ.get("FAKE_TRAP_TERM") == "1":
@@ -25,6 +25,9 @@ if args_file:
     keys = ("GIGACHAD_AGENT_CHILD", "GIGACHAD_LITE_DEPTH", "CLAUDECODE")
     with open(args_file, "w") as f:
         json.dump({"cwd": os.getcwd(), "argv": argv, "env": {k: os.environ.get(k) for k in keys}, "stdin": prompt}, f)
+
+if os.environ.get("FAKE_STDERR"):
+    print(os.environ["FAKE_STDERR"], file=sys.stderr, flush=True)
 
 if os.environ.get("FAKE_BAD_JSON") == "1":
     print("this is not json")
