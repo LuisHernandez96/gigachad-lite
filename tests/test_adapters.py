@@ -69,15 +69,6 @@ class TestClaudeBuild:
             "--dangerously-skip-permissions", "--foo",
         ]
 
-    def test_read_only_mode_argv(self, tmp_path):
-        from gigachad_lite.adapters import get_adapter
-
-        cmd = get_adapter("claude").build("sonnet", "read-only", tmp_path, ["--foo"], {})
-        assert cmd.argv == [
-            "claude", "-p", "--model", "sonnet", "--output-format", "json",
-            "--disallowedTools", "Edit,Write,MultiEdit,NotebookEdit", "--foo",
-        ]
-
 
 class TestBuildEnv:
     @pytest.mark.parametrize("agent", ["codex", "claude"])
@@ -164,3 +155,21 @@ class TestClaudeParse:
         cmd = adapter.build("sonnet", "write", tmp_path, [], dict(os.environ))
         proc = subprocess.run(cmd.argv, input="hi", env=cmd.env, capture_output=True, text=True, check=False)
         assert adapter.parse(Path(tmp_path), proc.stdout).final_message == "claude says hi"
+
+
+class TestClaudeReadOnlyLockdown:
+    def test_read_only_argv_restricts_tools_and_mcp(self, tmp_path):
+        from gigachad_lite.adapters import get_adapter
+
+        cmd = get_adapter("claude").build("sonnet", "read-only", tmp_path, ["--foo"], {})
+        assert cmd.argv == [
+            "claude", "-p", "--model", "sonnet", "--output-format", "json",
+            "--tools", "Read,Glob,Grep", "--strict-mcp-config", "--foo",
+        ]
+
+    def test_read_only_has_no_permission_bypass_or_denylist(self, tmp_path):
+        from gigachad_lite.adapters import get_adapter
+
+        argv = get_adapter("claude").build("sonnet", "read-only", tmp_path, [], {}).argv
+        assert "--dangerously-skip-permissions" not in argv
+        assert "--disallowedTools" not in argv

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from gigachad_lite.adapters.base import Adapter, AgentCommand, ParsedResult, child_env
 
-READ_ONLY_DISALLOWED_TOOLS = "Edit,Write,MultiEdit,NotebookEdit"
+READ_ONLY_TOOLS = "Read,Glob,Grep"
 
 
 class ClaudeAdapter(Adapter):
@@ -21,7 +21,7 @@ class ClaudeAdapter(Adapter):
     ) -> AgentCommand:
         argv = ["claude", "-p", "--model", model, "--output-format", "json"]
         if mode == "read-only":
-            argv += ["--disallowedTools", READ_ONLY_DISALLOWED_TOOLS]
+            argv += ["--tools", READ_ONLY_TOOLS, "--strict-mcp-config"]
         else:
             argv.append("--dangerously-skip-permissions")
         argv += extra_args

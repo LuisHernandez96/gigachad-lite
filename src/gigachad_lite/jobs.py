@@ -1,11 +1,13 @@
 """Job store: one directory per job under ``<home>/jobs/<id>/``.
 
-Files: ``meta.json`` (state), ``prompt.md``, ``transcript.log`` (worker output),
-``result.json`` (final outcome), and a ``cancel`` marker when cancellation is requested.
+Files: ``meta.json`` (state), ``prompt.md``, ``transcript.log`` (worker stdout),
+``stderr.log`` (worker stderr), ``result.json`` (final outcome), and a ``cancel`` marker
+when cancellation is requested.
 """
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import secrets
@@ -14,6 +16,8 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
@@ -23,6 +27,7 @@ from gigachad_lite.env import current_depth
 TERMINAL_STATES = ("succeeded", "failed", "timed_out", "cancelled")
 DEFAULT_TIMEOUT = 3600
 CANCEL_MARKER = "cancel"
+DEFAULT_KILL_GRACE = 10.0
 
 
 def default_home() -> Path:
@@ -42,6 +47,28 @@ def write_json(path: Path, data: Any) -> None:
         raise
 
 
+@contextmanager
+def job_lock(job_dir: Path) -> Iterator[None]:
+    """Exclusive lock serializing every read-modify-write of a job's ``meta.json``."""
+    with open(job_dir / ".lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def _is_zombie(pid: int) -> bool:
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+    except OSError:
+        try:
+            state = subprocess.run(
+                ["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True, check=False
+            ).stdout.strip()
+        except OSError:
+            return False
+        return state.startswith("Z")
+    return stat[stat.rindex(")") + 2 :].startswith("Z")
+
+
 def pid_alive(pid: int | None) -> bool:
     if not pid:
         return False
@@ -51,7 +78,42 @@ def pid_alive(pid: int | None) -> bool:
         return False
     except PermissionError:
         return True
+    return not _is_zombie(pid)
+
+
+def _group_alive(pgid: int) -> bool:
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
     return True
+
+
+def kill_process_group(pgid: int, grace: float, reap: subprocess.Popen | None = None) -> str:
+    """SIGTERM a process group, SIGKILL it if any member outlives ``grace`` seconds; return the last signal sent.
+
+    Pass ``reap`` when the group leader is our own child so its zombie does not keep the group alive.
+    """
+    used = "SIGTERM"
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        return used
+    deadline = time.monotonic() + grace
+    while time.monotonic() < deadline:
+        if reap is not None:
+            reap.poll()
+        if not _group_alive(pgid):
+            return used
+        time.sleep(0.05)
+    used = "SIGKILL"
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+    return used
 
 
 @dataclass
@@ -95,7 +157,9 @@ class Job:
 
 class JobStore:
     def __init__(self, home: Path | None = None) -> None:
-        self.jobs_dir = (Path(home) if home else default_home()) / "jobs"
+        self.home = Path(home if home else default_home()).expanduser().resolve()
+        self.jobs_dir = self.home / "jobs"
+        self._supervisors: dict[str, subprocess.Popen] = {}
 
     def create(
         self,
@@ -145,23 +209,60 @@ class JobStore:
             stderr=subprocess.DEVNULL,
             start_new_session=True,
         )
-        job.supervisor_pid = proc.pid
+        self._supervisors[job.id] = proc
+        with job_lock(job.job_dir):
+            job = Job.load(job.job_dir)
+            job.supervisor_pid = proc.pid
+            job.save()
         return job
 
     def get(self, job_id: str) -> Job:
         job_dir = self._resolve(job_id)
         job = Job.load(job_dir)
-        if not job.is_terminal and job.supervisor_pid and not pid_alive(job.supervisor_pid):
-            job.state = "failed"
-            job.error = "supervisor died"
-            job.finished_at = time.time()
-            job.save()
+        if not job.is_terminal and job.supervisor_pid and not self._supervisor_alive(job):
+            with job_lock(job_dir):
+                job = Job.load(job_dir)
+                if not job.is_terminal:
+                    if (job_dir / "result.json").exists():
+                        self._adopt_result(job)
+                    else:
+                        self._finalize_dead_supervisor(job)
         return job
+
+    def _supervisor_alive(self, job: Job) -> bool:
+        proc = self._supervisors.get(job.id)
+        if proc is not None and proc.poll() is not None:
+            return False
+        return pid_alive(job.supervisor_pid)
+
+    def _adopt_result(self, job: Job) -> None:
+        result = json.loads((job.job_dir / "result.json").read_text(encoding="utf-8"))
+        for name in ("state", "exit_code", "killed_by", "signal", "final_message", "error"):
+            setattr(job, name, result[name])
+        job.finished_at = time.time()
+        job.save()
+
+    def _finalize_dead_supervisor(self, job: Job) -> None:
+        if job.worker_pid and pid_alive(job.worker_pid):
+            grace = float(os.environ.get("GIGACHAD_LITE_KILL_GRACE", DEFAULT_KILL_GRACE))
+            job.killed_by = "supervisor_died"
+            job.signal = kill_process_group(job.worker_pid, grace)
+        job.state = "failed"
+        job.error = "supervisor died"
+        job.finished_at = time.time()
+        job.save()
 
     def list(self, cwd: Path | None = None) -> list[Job]:
         if not self.jobs_dir.is_dir():
             return []
-        jobs = [self.get(p.name) for p in sorted(self.jobs_dir.iterdir(), reverse=True) if p.is_dir()]
+        jobs = []
+        for p in sorted(self.jobs_dir.iterdir(), reverse=True):
+            if not p.is_dir():
+                continue
+            try:
+                jobs.append(self.get(p.name))
+            except (KeyError, FileNotFoundError, json.JSONDecodeError):
+                continue
         if cwd is not None:
             wanted = os.path.realpath(cwd)
             jobs = [j for j in jobs if os.path.realpath(j.cwd) == wanted]
@@ -178,27 +279,29 @@ class JobStore:
             time.sleep(0.1)
 
     def cancel(self, job_id: str) -> Job:
-        job = Job.load(self._resolve(job_id))
-        if job.is_terminal:
+        job_dir = self._resolve(job_id)
+        with job_lock(job_dir):
+            job = Job.load(job_dir)
+            if job.is_terminal:
+                return job
+            (job_dir / CANCEL_MARKER).touch()
+            if not self._supervisor_alive(job):
+                if job.worker_pid:
+                    try:
+                        os.killpg(job.worker_pid, signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError):
+                        pass
+                job.state = "cancelled"
+                job.finished_at = time.time()
+                job.save()
             return job
-        (job.job_dir / CANCEL_MARKER).touch()
-        if not pid_alive(job.supervisor_pid):
-            if job.worker_pid:
-                try:
-                    os.killpg(job.worker_pid, signal.SIGKILL)
-                except (ProcessLookupError, PermissionError):
-                    pass
-            job.state = "cancelled"
-            job.finished_at = time.time()
-            job.save()
-        return job
 
     def _resolve(self, job_id: str) -> Path:
         if (self.jobs_dir / job_id / "meta.json").is_file():
             return self.jobs_dir / job_id
         matches = []
         if self.jobs_dir.is_dir():
-            matches = [p for p in self.jobs_dir.iterdir() if p.name.startswith(job_id)]
+            matches = [p for p in self.jobs_dir.iterdir() if p.name.startswith(job_id) and (p / "meta.json").is_file()]
         if len(matches) != 1:
             raise KeyError(job_id)
         return matches[0]

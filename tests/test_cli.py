@@ -324,3 +324,75 @@ class TestCliInvalidDepth:
         assert code == 0
         assert re.fullmatch(r"\d{8}-\d{6}-[0-9a-f]{4}", out.strip())
         assert "GIGACHAD_LITE_DEPTH" in err
+
+
+class TestIncompleteJobDirsCli:
+    def _setup(self, fake_agents, workdir, capsys):
+        from gigachad_lite.jobs import JobStore
+
+        job_id = start_job(capsys)
+        empty = JobStore().jobs_dir / "20200101-000000-dead"
+        empty.mkdir()
+        return job_id, empty.name
+
+    def test_status_and_list_all_tolerate_an_empty_job_dir(self, fake_agents, workdir, capsys):
+        self._setup(fake_agents, workdir, capsys)
+
+        code, _, _ = run_cli(capsys, "status")
+        assert code == 0
+        code, out, _ = run_cli(capsys, "list", "--all")
+        assert code == 0
+        assert "20200101-000000-dead" not in out
+
+    def test_result_of_an_empty_job_dir_is_an_unknown_job(self, fake_agents, workdir, capsys):
+        _, empty_name = self._setup(fake_agents, workdir, capsys)
+
+        code, _, err = run_cli(capsys, "result", empty_name)
+
+        assert code == 2
+        assert "unknown job" in err.lower()
+
+
+RESULT_KEYS = {
+    "id", "state", "agent", "model", "cwd", "mode", "exit_code", "final_message", "error",
+    "duration_s", "killed_by", "signal", "depth", "extras", "stderr_path", "job_dir",
+    "created_at", "started_at", "finished_at",
+}
+
+
+class TestJsonResultSchema:
+    def test_run_wait_result_json_share_one_schema(self, fake_agents, workdir, capsys):
+        fake_agents(last_message="done")
+        outputs = []
+        code, out, _ = run_cli(
+            capsys, "run", "--agent", "claude", "--model", "sonnet", "--prompt", "hi", "--json"
+        )
+        assert code == 0
+        outputs.append(json.loads(out))
+        job_id = outputs[0]["id"]
+        for command in ("wait", "result"):
+            code, out, _ = run_cli(capsys, command, job_id, "--json")
+            assert code == 0
+            outputs.append(json.loads(out))
+
+        for data in outputs:
+            assert isinstance(data, dict)
+            assert RESULT_KEYS <= set(data)
+            assert set(data) == set(outputs[0])
+            assert data["extras"]["session_id"] == "sess-1"
+            assert data["duration_s"] >= 0
+            assert data["state"] == "succeeded"
+
+    def test_result_json_of_running_job_uses_same_schema(self, fake_agents, workdir, capsys):
+        fake_agents(sleep=30)
+        job_id = start_job(capsys, agent="claude")
+        code, out, _ = run_cli(capsys, "result", job_id, "--json")
+        run_cli(capsys, "cancel", job_id)
+
+        assert code == 3
+        data = json.loads(out)
+        assert RESULT_KEYS <= set(data)
+        assert data["state"] in ("queued", "running")
+        assert data["exit_code"] is None
+        assert data["final_message"] is None
+        assert data["finished_at"] is None

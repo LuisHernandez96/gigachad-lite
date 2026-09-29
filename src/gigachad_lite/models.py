@@ -11,7 +11,7 @@ from typing import Callable
 
 CLAUDE_MODELS = ("sonnet", "opus", "haiku", "fable")
 
-_MODEL_LINE = re.compile(r'^\s*model\s*=\s*"([^"]+)"', re.MULTILINE)
+_MODEL_LINE = re.compile(r"""^\s*model\s*=\s*("([^"\\]|\\.)*"|'[^']*')""")
 
 
 def _resolve_codex_home(codex_home: Path | None) -> Path:
@@ -23,10 +23,16 @@ def _resolve_codex_home(codex_home: Path | None) -> Path:
 
 def _read_codex_default(home: Path) -> str | None:
     try:
-        match = _MODEL_LINE.search((home / "config.toml").read_text())
+        lines = (home / "config.toml").read_text().splitlines()
     except OSError:
         return None
-    return match.group(1) if match else None
+    for line in lines:
+        if line.lstrip().startswith("["):
+            return None
+        match = _MODEL_LINE.match(line)
+        if match:
+            return match.group(1)[1:-1]
+    return None
 
 
 def _read_codex_ids(home: Path) -> list[str]:

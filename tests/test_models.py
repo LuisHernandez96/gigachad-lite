@@ -202,3 +202,35 @@ class TestModelsCommand:
         assert code == 0
         assert "gpt-6-sol" in out
         assert "sonnet" not in out
+
+
+class TestCodexDefaultDetection:
+    def _default(self, tmp_path, config):
+        from gigachad_lite.models import list_models
+
+        home = _codex_home(
+            tmp_path,
+            cache={"models": [{"slug": "gpt-6-sol"}, {"slug": "gpt-6-luna"}, {"slug": "gpt-6-astra"}, {"slug": "gpt-5.5"}]},
+            config=config,
+        )
+        result = list_models(codex_home=home, which=_which_only("codex"))
+        return [entry["id"] for entry in result if entry["default"]]
+
+    def test_root_model_wins_over_profile_model(self, tmp_path):
+        config = 'model = "gpt-6-sol"\n\n[profiles.fast]\nmodel = "gpt-5.5"\n'
+        assert self._default(tmp_path, config) == ["gpt-6-sol"]
+
+    def test_profile_only_model_is_not_a_default(self, tmp_path):
+        config = 'approval_policy = "never"\n\n[profiles.fast]\nmodel = "gpt-5.5"\n'
+        assert self._default(tmp_path, config) == []
+
+    def test_single_quoted_root_model(self, tmp_path):
+        assert self._default(tmp_path, "model = 'gpt-6-luna'\n") == ["gpt-6-luna"]
+
+    def test_root_model_after_comment_with_trailing_comment(self, tmp_path):
+        config = '# my config\nmodel = "gpt-6-astra"  # main\n'
+        assert self._default(tmp_path, config) == ["gpt-6-astra"]
+
+    def test_dotted_and_inline_tables_before_first_header_are_still_root(self, tmp_path):
+        config = 'sandbox.mode = "x"\nfeatures = { a = true }\nmodel = "gpt-6-sol"\n\n[profiles.fast]\nmodel = "gpt-5.5"\n'
+        assert self._default(tmp_path, config) == ["gpt-6-sol"]
