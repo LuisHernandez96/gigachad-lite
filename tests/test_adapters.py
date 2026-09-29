@@ -69,15 +69,6 @@ class TestClaudeBuild:
             "--dangerously-skip-permissions", "--foo",
         ]
 
-    def test_read_only_mode_argv(self, tmp_path):
-        from gigachad_lite.adapters import get_adapter
-
-        cmd = get_adapter("claude").build("sonnet", "read-only", tmp_path, ["--foo"], {})
-        assert cmd.argv == [
-            "claude", "-p", "--model", "sonnet", "--output-format", "json",
-            "--disallowedTools", "Edit,Write,MultiEdit,NotebookEdit", "--foo",
-        ]
-
 
 class TestBuildEnv:
     @pytest.mark.parametrize("agent", ["codex", "claude"])
@@ -166,7 +157,6 @@ class TestClaudeParse:
         assert adapter.parse(Path(tmp_path), proc.stdout).final_message == "claude says hi"
 
 
-@pytest.mark.red_phase
 class TestClaudeReadOnlyLockdown:
     def test_read_only_argv_restricts_tools_and_mcp(self, tmp_path):
         from gigachad_lite.adapters import get_adapter

@@ -367,7 +367,6 @@ def _kill_job_processes(store, job_id):
                 pass
 
 
-@pytest.mark.red_phase
 class TestNonBlockingPromptDelivery:
     BIG_PROMPT = "x" * (2 * 1024 * 1024)
 
@@ -416,7 +415,6 @@ class TestNonBlockingPromptDelivery:
         assert seen["stdin_sha256"] == hashlib.sha256(prompt.encode()).hexdigest()
 
 
-@pytest.mark.red_phase
 class TestClaudeStderrSeparation:
     def test_stderr_does_not_break_result_parsing(self, fake_agents, workdir):
         from gigachad_lite.jobs import JobStore
@@ -444,7 +442,6 @@ class TestClaudeStderrSeparation:
         assert "some warning" in out
 
 
-@pytest.mark.red_phase
 class TestAbsoluteHome:
     def test_relative_home_is_made_absolute(self, tmp_path, monkeypatch):
         from gigachad_lite.jobs import JobStore

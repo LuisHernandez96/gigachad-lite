@@ -49,7 +49,7 @@ gcl result <id>
 | `list` | List jobs of the current directory | `--all`, `--json` |
 | `wait` | Wait for a job and print its result | `--timeout`, `--json` |
 | `result` | Print the result of a finished job | `--json` |
-| `logs` | Print a job's transcript | `--tail N` |
+| `logs` | Print a job's transcript and stderr | `--tail N` |
 | `cancel` | Cancel a running job (kills the whole process group) | |
 | `models` | List models available for delegation | `--agent {claude,codex}`, `--json` |
 
@@ -75,7 +75,7 @@ Exit codes of `run`, `wait` and `result` mirror the job state:
 
 ## Safety
 
-- `--mode write` (default) runs workers with permission prompts bypassed (`--dangerously-bypass-approvals-and-sandbox` for Codex, `--dangerously-skip-permissions` for Claude). Only use it on repositories you trust. Use `--mode read-only` for reviews and analysis.
+- `--mode write` (default) runs workers with permission prompts bypassed (`--dangerously-bypass-approvals-and-sandbox` for Codex, `--dangerously-skip-permissions` for Claude). Only use it on repositories you trust. Use `--mode read-only` for reviews and analysis (Claude: only Read/Glob/Grep, no MCP; Codex: `-s read-only` sandbox).
 - Recursion guard: a job refuses to start when `GIGACHAD_LITE_DEPTH` has reached `GIGACHAD_LITE_MAX_DEPTH` (default 1), so workers cannot spawn workers.
 - Environment variables: `GIGACHAD_LITE_HOME` (job store root), `GIGACHAD_LITE_DEPTH` (current depth, unset = 0), `GIGACHAD_LITE_MAX_DEPTH` (default 1).
 

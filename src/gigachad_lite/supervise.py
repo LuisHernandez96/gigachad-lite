@@ -44,33 +44,28 @@ def kill_group(proc: subprocess.Popen, grace: float) -> str:
 
 
 def run_worker(job: Job) -> None:
-    prompt = (job.job_dir / "prompt.md").read_text(encoding="utf-8")
     adapter = get_adapter(job.agent)
     command = adapter.build(job.model, job.mode, job.job_dir, job.extra_args, os.environ)
     grace = float(os.environ.get("GIGACHAD_LITE_KILL_GRACE", DEFAULT_KILL_GRACE))
     transcript = job.job_dir / "transcript.log"
+    stderr_log = job.job_dir / "stderr.log"
 
     job.state = "running"
     job.started_at = time.time()
     job.save()
 
-    with open(transcript, "wb") as out:
+    with open(job.job_dir / "prompt.md", "rb") as stdin, open(transcript, "wb") as out, open(stderr_log, "wb") as err:
         proc = subprocess.Popen(
             command.argv,
             cwd=job.cwd,
             env=command.env,
-            stdin=subprocess.PIPE,
+            stdin=stdin,
             stdout=out,
-            stderr=subprocess.STDOUT,
+            stderr=err,
             start_new_session=True,
         )
         job.worker_pid = proc.pid
         job.save()
-        try:
-            proc.stdin.write(prompt.encode("utf-8"))
-            proc.stdin.close()
-        except BrokenPipeError:
-            pass
 
         deadline = time.monotonic() + job.timeout
         outcome = None
@@ -114,6 +109,7 @@ def run_worker(job: Job) -> None:
             "agent": job.agent,
             "model": job.model,
             "duration_s": job.finished_at - job.started_at,
+            "stderr_path": str(stderr_log),
             "extras": parsed.extras,
         },
     )

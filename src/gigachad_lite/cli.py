@@ -141,9 +141,16 @@ def cmd_result(store: JobStore, args: argparse.Namespace, extra_args: list[str])
 
 
 def cmd_logs(store: JobStore, args: argparse.Namespace, extra_args: list[str]) -> int:
-    transcript = store.get(args.job_id).job_dir / "transcript.log"
-    text = transcript.read_text(encoding="utf-8", errors="replace") if transcript.exists() else ""
-    lines = text.splitlines()
+    job_dir = store.get(args.job_id).job_dir
+
+    def read(name: str) -> str:
+        path = job_dir / name
+        return path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
+
+    lines = read("transcript.log").splitlines()
+    stderr = read("stderr.log")
+    if stderr.strip():
+        lines += ["--- stderr ---", *stderr.splitlines()]
     if args.tail is not None:
         lines = lines[-args.tail :] if args.tail > 0 else []
     if lines:
@@ -226,7 +233,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_json(result)
     result.set_defaults(func=cmd_result)
 
-    logs = sub.add_parser("logs", help="print a job's transcript")
+    logs = sub.add_parser("logs", help="print a job's transcript and stderr")
     add_job_id(logs)
     logs.add_argument("--tail", type=int, help="only the last N lines")
     logs.set_defaults(func=cmd_logs)

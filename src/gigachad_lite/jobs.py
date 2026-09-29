@@ -1,7 +1,8 @@
 """Job store: one directory per job under ``<home>/jobs/<id>/``.
 
-Files: ``meta.json`` (state), ``prompt.md``, ``transcript.log`` (worker output),
-``result.json`` (final outcome), and a ``cancel`` marker when cancellation is requested.
+Files: ``meta.json`` (state), ``prompt.md``, ``transcript.log`` (worker stdout),
+``stderr.log`` (worker stderr), ``result.json`` (final outcome), and a ``cancel`` marker
+when cancellation is requested.
 """
 
 from __future__ import annotations
@@ -95,7 +96,8 @@ class Job:
 
 class JobStore:
     def __init__(self, home: Path | None = None) -> None:
-        self.jobs_dir = (Path(home) if home else default_home()) / "jobs"
+        self.home = Path(home if home else default_home()).expanduser().resolve()
+        self.jobs_dir = self.home / "jobs"
 
     def create(
         self,
