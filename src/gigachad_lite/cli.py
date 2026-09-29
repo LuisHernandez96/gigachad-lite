@@ -10,6 +10,7 @@ from pathlib import Path
 from gigachad_lite import __version__
 from gigachad_lite.adapters import AGENTS
 from gigachad_lite.jobs import DEFAULT_TIMEOUT, Job, JobStore
+from gigachad_lite.models import list_models
 
 EXIT_USAGE = 2
 EXIT_NOT_FINISHED = 3
@@ -155,6 +156,20 @@ def cmd_cancel(store: JobStore, args: argparse.Namespace, extra_args: list[str])
     return 0
 
 
+def cmd_models(store: JobStore, args: argparse.Namespace, extra_args: list[str]) -> int:
+    entries = [entry for entry in list_models() if args.agent in (None, entry["agent"])]
+    if args.json:
+        print(json.dumps(entries, indent=2))
+        return 0
+    current_agent = None
+    for entry in entries:
+        if entry["agent"] != current_agent:
+            current_agent = entry["agent"]
+            print(f"{current_agent}:")
+        print(f"  {'*' if entry['default'] else ' '} {entry['id']}")
+    return 0
+
+
 def add_job_id(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("job_id")
 
@@ -218,6 +233,11 @@ def build_parser() -> argparse.ArgumentParser:
     cancel = sub.add_parser("cancel", help="cancel a running job")
     add_job_id(cancel)
     cancel.set_defaults(func=cmd_cancel)
+
+    models = sub.add_parser("models", help="list models available for delegation")
+    models.add_argument("--agent", choices=AGENTS, help="only list models for this agent")
+    add_json(models)
+    models.set_defaults(func=cmd_models)
     return parser
 
 
