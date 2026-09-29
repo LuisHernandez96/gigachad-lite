@@ -19,15 +19,25 @@ Find the CLI, in this order:
 
 Run `gcl models --json`. If the user hasn't named a worker, ask them, offering a Claude model and a codex model; delegating across vendors is the point. The agent is `claude` for Claude models and `codex` for codex models.
 
-## 3. Write a self-contained prompt file
+## 3. Write a self-contained prompt
 
 The worker has none of your context. Include the goal, the relevant files, constraints, the definition of done, "do not commit", and "finish with a short summary of what you changed".
+
+Delivering the prompt (pick one):
+
+- `--prompt-file <path>`: preferred for long prompts when you can write files (keeps an audit copy).
+- `--prompt "<text>"`: when you cannot create files (e.g. your host denies file writes); quote carefully.
+- `--prompt-file -`: pipe the prompt on stdin (e.g. from a heredoc) when files can't be written and the prompt is long.
+
+The job store always saves the prompt as `prompt.md` in the job directory, so no audit trail is lost.
 
 ## 4. Start the job
 
 ```
 gcl start --agent <a> --model <m> --prompt-file <f> --json
 ```
+
+(Or substitute `--prompt "<text>"` / `--prompt-file -` as described above.)
 
 Add `--mode read-only` for reviews and second opinions, and `--timeout <seconds>` for long tasks. Record the job id.
 
