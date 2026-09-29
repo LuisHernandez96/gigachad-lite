@@ -351,3 +351,49 @@ class TestIncompleteJobDirsCli:
 
         assert code == 2
         assert "unknown job" in err.lower()
+
+
+RESULT_KEYS = {
+    "id", "state", "agent", "model", "cwd", "mode", "exit_code", "final_message", "error",
+    "duration_s", "killed_by", "signal", "depth", "extras", "stderr_path", "job_dir",
+    "created_at", "started_at", "finished_at",
+}
+
+
+@pytest.mark.red_phase
+class TestJsonResultSchema:
+    def test_run_wait_result_json_share_one_schema(self, fake_agents, workdir, capsys):
+        fake_agents(last_message="done")
+        outputs = []
+        code, out, _ = run_cli(
+            capsys, "run", "--agent", "claude", "--model", "sonnet", "--prompt", "hi", "--json"
+        )
+        assert code == 0
+        outputs.append(json.loads(out))
+        job_id = outputs[0]["id"]
+        for command in ("wait", "result"):
+            code, out, _ = run_cli(capsys, command, job_id, "--json")
+            assert code == 0
+            outputs.append(json.loads(out))
+
+        for data in outputs:
+            assert isinstance(data, dict)
+            assert RESULT_KEYS <= set(data)
+            assert set(data) == set(outputs[0])
+            assert data["extras"]["session_id"] == "sess-1"
+            assert data["duration_s"] >= 0
+            assert data["state"] == "succeeded"
+
+    def test_result_json_of_running_job_uses_same_schema(self, fake_agents, workdir, capsys):
+        fake_agents(sleep=30)
+        job_id = start_job(capsys, agent="claude")
+        code, out, _ = run_cli(capsys, "result", job_id, "--json")
+        run_cli(capsys, "cancel", job_id)
+
+        assert code == 3
+        data = json.loads(out)
+        assert RESULT_KEYS <= set(data)
+        assert data["state"] == "running"
+        assert data["exit_code"] is None
+        assert data["final_message"] is None
+        assert data["finished_at"] is None
