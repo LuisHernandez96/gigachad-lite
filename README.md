@@ -79,6 +79,10 @@ Exit codes of `run`, `wait` and `result` mirror the job state:
 - Recursion guard: a job refuses to start when `GIGACHAD_LITE_DEPTH` has reached `GIGACHAD_LITE_MAX_DEPTH` (default 1), so workers cannot spawn workers.
 - Environment variables: `GIGACHAD_LITE_HOME` (job store root), `GIGACHAD_LITE_DEPTH` (current depth, unset = 0), `GIGACHAD_LITE_MAX_DEPTH` (default 1).
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). There is no hosted CI; run `scripts/ci.sh` locally before opening a PR.
+
 ## Relationship to Gigachad
 
 gigachad-lite is the small execute-only core. For the full TDD loop (planning, sprints, tests, review, commits) see [Gigachad](https://github.com/LuisHernandez96/GigachadDev).
