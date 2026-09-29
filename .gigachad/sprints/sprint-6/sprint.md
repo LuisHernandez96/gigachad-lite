@@ -1,7 +1,7 @@
 ---
 sprint: 6
 name: v0.1.5 — skill triggers on model names
-status: pending
+status: complete
 ---
 
 # Sprint 6: v0.1.5
@@ -17,4 +17,4 @@ description must name model families/aliases and say that "<model> agent/subagen
 
 | # | ID | Section | Depends On | Status | Description |
 |---|-----|---------|-----------|--------|-------------|
-| 1 | T-D-2 | GREEN | — | pending | Skill description names models + never-deny rule; v0.1.5 |
+| 1 | T-D-2 | GREEN | — | complete | Skill description names models + never-deny rule; v0.1.5 |
