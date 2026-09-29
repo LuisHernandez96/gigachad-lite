@@ -33,7 +33,6 @@ def workdir(tmp_path):
     return path
 
 
-@pytest.mark.red_phase
 class TestJobs:
     def test_create_writes_meta_and_prompt(self, fake_agents, workdir):
         from gigachad_lite.jobs import JobStore
